@@ -8449,6 +8449,65 @@ async function aiInspireOutline(analysis, n, onProgress) {
     return false;
   }
 
+  /* ---------- 跨章逻辑一致性质检（v19） ---------- */
+  // 重症状态词与恢复过渡词
+  var CRITICAL_STATUS_WORDS = ["昏迷", "重伤", "濒死", "垂死", "不省人事", "奄奄一息", "重伤昏迷"];
+  var RECOVER_HINT_WORDS = ["醒", "苏醒", "醒来", "转醒", "疗伤", "恢复", "修养", "养伤", "伤愈", "痊愈", "好转", "起色", "数日", "三天", "五日", "五天", "半月", "月余", "痊愈"];
+  // 状态突变检测：上一章末人物处于重症状态，本章该人物出场必须伴恢复/时间过渡交代
+  function statusJumpCheck(body, state) {
+    if (!state || !state.characters) return { ok: true };
+    var text = String(body || "");
+    var chars = state.characters || {};
+    for (var name in chars) {
+      if (!Object.prototype.hasOwnProperty.call(chars, name)) continue;
+      var info = chars[name];
+      if (!info || typeof info !== "object") continue;
+      var status = String(info.status || "");
+      if (!status) continue;
+      var critical = false;
+      for (var i = 0; i < CRITICAL_STATUS_WORDS.length; i++) {
+        if (status.indexOf(CRITICAL_STATUS_WORDS[i]) >= 0) { critical = true; break; }
+      }
+      if (!critical) continue;
+      var idx = text.indexOf(name);
+      if (idx < 0) continue; // 本章未出场，不构成突变
+      // 人名前后 100 字窗口内需出现恢复/时间过渡词
+      var win = text.slice(Math.max(0, idx - 100), idx + 100);
+      var hasRecover = false;
+      for (var j = 0; j < RECOVER_HINT_WORDS.length; j++) {
+        if (win.indexOf(RECOVER_HINT_WORDS[j]) >= 0) { hasRecover = true; break; }
+      }
+      if (!hasRecover) {
+        return { ok: false, reason: "状态断裂：" + name + "上一章末处于「" + status + "」，本章出场却无苏醒/疗伤/时间过渡交代，请在" + name + "出场前后补一句恢复或时间过渡（如\"三日后伤愈\"）" };
+      }
+    }
+    return { ok: true };
+  }
+  // 悬念型 hook 特征词：只有悬念/突发型钩子才强制下一章开头承接
+  var SUSPENSE_HOOK_WORDS = ["？", "?", "谁", "何人", "为何", "怎么", "突然", "猛然", "骤然", "轰", "爆", "惊", "危", "神秘", "陌生", "黑影", "身影", "异变", "变故"];
+  function _isSuspenseHook(hook) {
+    var h = String(hook || "");
+    if (!h || h === "（全书完）" || h === "（沿用原作章末收束）") return false;
+    for (var i = 0; i < SUSPENSE_HOOK_WORDS.length; i++) {
+      if (h.indexOf(SUSPENSE_HOOK_WORDS[i]) >= 0) return true;
+    }
+    return false;
+  }
+  // 悬念承接检测：上一章以悬念型钩子收尾，本章开头 500 字内必须命中钩子关键词（2字滑窗）
+  function hookCarryCheck(body, prevHook) {
+    if (!_isSuspenseHook(prevHook)) return { ok: true };
+    var clean = String(prevHook || "").replace(/[（）()\s，。！？、：；“”‘’—…·,.!?]/g, "");
+    if (clean.length < 2) return { ok: true };
+    var head = String(body || "").slice(0, 500);
+    var kws = {};
+    for (var i = 0; i < clean.length - 1; i++) {
+      var seg = clean.slice(i, i + 2);
+      if (/[\u4e00-\u9fff]/.test(seg)) kws[seg] = 1;
+    }
+    for (var k in kws) { if (head.indexOf(k) >= 0) return { ok: true }; }
+    return { ok: false, reason: "悬念未承接：上一章章末留下悬念「" + String(prevHook).slice(0, 40) + "」，本章开头 500 字内必须对此作出回应或推进，禁止无视上章悬念直接另起场景" };
+  }
+
   function protagonistPresent(body, outline) {
     var chars = (outline && outline.characters) || [];
     if (!chars.length) return true;
@@ -8546,6 +8605,10 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var chars = charBible(outline, 6);
     var ctxBlock = ctx.context ? ("【前情提要】\n" + ctx.context + "\n（续写必须承接以上情节、设定与人物状态，不得矛盾）\n") : "";
     var stateBlockText = ctx.stateBlock ? (String(ctx.stateBlock) + "\n") : "";
+    // 时间线要求每章必注入：有数据时承接时间线，无数据时禁止无交代跳跃
+    var timelineHint = (ctx.stateBlock && String(ctx.stateBlock).indexOf("【时间线】") >= 0) ?
+      "【时间线要求】本章时间必须承接上述时间线，禁止时间跳跃超过本章剧情需要，禁止时间倒退（除非有明确回溯说明）。\n" :
+      "【时间线要求】本章时间必须紧承上一章，若需时间跳跃必须在开头明确交代（如「三日后」「半月后」），禁止无交代的时间跳跃与倒退。\n";
     var lockBlock = genreLock(analysis);
     var sysBlock = sysBlockFor(outline, tags);
     var urbanBlock = urbanBlockFor(outline, tags);
@@ -8553,6 +8616,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var hookHint = String(ctx.hookHint || "");
     var prevHead = String(ctx.prevHead || "");
     var antiEcho = !!ctx.antiEcho;
+    var logicHint = String(ctx.logicHint || "");
     var isFollow = !!originalBody;
     var isFinal = String(ch.hook || "") === "（全书完）";
     var sys, user;
@@ -8601,7 +8665,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
         "【本章】第" + (ch.no != null ? ch.no : "?") + "章《" + (ch.title || "") + "》\n" +
         storyStage(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
         rhythmGuide(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
-        logic + ctxBlock + stateBlockText +
+        logic + ctxBlock + stateBlockText + timelineHint +
         "【本章原文】\n" + origForAI + "\n" +
         (prevTail ? "【上一章改写稿结尾】" + String(prevTail).slice(-350) + "\n（注意衔接）\n" : "") +
         (expandHint ? "\n【重要】上一稿字数严重不足，本次必须大幅扩写：增加对话往来、场景细节、心理描写、动作分解，确保中文字符数不少于 " + MIN_CHAPTER_CHARS + " 字。\n" : "") +
@@ -8629,7 +8693,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
         "【全书信息】《" + (outline.title || "") + "》：" + (outline.premise || "") + "\n" +
         "【世界观】" + (outline.world || "") + "\n" +
         "【人物】" + chars + "\n" +
-        ctxBlock + stateBlockText +
+        ctxBlock + stateBlockText + timelineHint +
         "【本章】第" + (ch.no != null ? ch.no : "?") + "章《" + (ch.title || "") + "》\n" +
         storyStage(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
         rhythmGuide(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
@@ -8638,6 +8702,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
         (prevHead ? "【防雷同·硬要求】上一章开头：「" + _normHead(prevHead, 24) + "…」——本章开头必须换一种切入方式，禁止同句式、同时间词、同动作开场；" +
           "上一章结尾画面：「" + _normHead(String(prevTail).slice(-40), 24) + "…」——本章结尾禁止停在相同画面或相同动作上。\n" : "") +
         (antiEcho ? "\n【重要·防雷同重写】你上一稿的开头/结尾与上一章雷同，本次必须彻底更换开头切入句式与结尾画面，禁止重复上一章的开场时间词与收尾动作。\n" : "") +
+        (logicHint ? "\n【重要·逻辑一致性警告】你上一稿存在跨章逻辑矛盾：" + logicHint + "\n本次必须修正该矛盾，同时保持其余剧情不变。\n" : "") +
         (expandHint ? "\n【重要】上一稿字数严重不足，本次必须大幅扩写：增加对话往来、场景细节、心理描写、动作分解，确保中文字符数不少于 " + MIN_CHAPTER_CHARS + " 字。\n" : "") +
         (hookHint ? "\n【重要·章末钩子】上一稿没有停在指定钩子上。本章最后一句必须落在这个画面上：" + hookHint + "\n请把结尾改写为正好停在该钩子处，不要多写后续情节。\n" : "") +
         emotionAnchorBlock(ch) +
@@ -8686,7 +8751,8 @@ async function aiInspireOutline(analysis, n, onProgress) {
       "3. foreshadows：本章新埋下的伏笔（resolved=false, chapter=本章号），以及本章回收了哪些已有伏笔（把对应内容列出来，resolved=true）；\n" +
       "4. revealed：本章新揭示的设定/秘密/真相；\n" +
       "5. open_questions：本章留下的未解悬念；\n" +
-      "6. 只输出 JSON，不要任何解释文字。";
+      "6. 只输出 JSON，不要任何解释文字。\n" +
+      "7. timeline：本章的时间标记（如“三天后”/“次日”/“傍晚”），以及本章距离上一章的时间跨度（如“3天”/“1夜”）。如果本章没有明确时间标记，填“紧接上章”。";
     var user =
       "【本章号】第 " + chapterNo + " 章\n" +
       "【主要人物】" + charNames + "\n" +
@@ -8696,7 +8762,8 @@ async function aiInspireOutline(analysis, n, onProgress) {
       '{"characters":{"人名":{"location":"","power":"","items":"","relations":"","status":""}},' +
       '"foreshadows":[{"content":"伏笔内容","chapter":章节号,"resolved":false}],' +
       '"revealed":["新揭示设定"],' +
-      '"open_questions":["未解悬念"]}';
+      '"open_questions":["未解悬念"],' +
+      '"timeline":{"time_marker":"时间标记","time_span":"时间跨度"}}';
     try {
       return await chatJson(sys, user, 0.2, { maxTokens: opts && opts.maxTokens, model: opts && opts.model });
     } catch (e) {
@@ -8759,6 +8826,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
       }
       if (st.open_questions.length > 30) st.open_questions = st.open_questions.slice(-30);
     }
+    if (update.timeline && typeof update.timeline === "object") st.timeline = update.timeline;
   }
 
   /* ---------- 状态机：格式化为 prompt 块（StoryEngine._format_state 移植） ---------- */
@@ -8797,6 +8865,10 @@ async function aiInspireOutline(analysis, n, onProgress) {
       var rlines = ["【已揭示设定（后续不得推翻）】"];
       for (var ri = Math.max(0, rev.length - 15); ri < rev.length; ri++) rlines.push("· " + rev[ri]);
       parts.push(rlines.join("\n"));
+    }
+    if (st.timeline && String(st.timeline.time_marker || "").trim()) {
+      parts.push("【时间线】当前时间：" + String(st.timeline.time_marker).trim() +
+        "（距上一章：" + String(st.timeline.time_span || "").trim() + "）");
     }
     var oq = st.open_questions || [];
     if (oq.length) {
@@ -8918,6 +8990,56 @@ async function aiInspireOutline(analysis, n, onProgress) {
   var CLICHE_WORDS = ["不禁", "竟然", "殊不知", "与此同时", "值得一提的是", "总而言之", "综上所述",
     "不难看出", "可想而知", "涌上心头", "眼中闪过", "嘴角勾起", "仿佛", "宛如", "犹如"];
 
+  // 章节内部完整性检查：起承转合四段式
+  function chapterCompletenessCheck(body) {
+    var text = String(body || "");
+    var total = text.length;
+    if (total < 500) return { ok: true }; // 太短无法判断
+
+    // 分割为四个部分
+    var partSize = Math.floor(total / 4);
+    var part1 = text.slice(0, partSize);           // 引入
+    var part2 = text.slice(partSize, partSize * 2); // 发展
+    var part3 = text.slice(partSize * 2, partSize * 3); // 高潮
+    var part4 = text.slice(partSize * 3);           // 收束
+
+    // 检查高潮部分是否有冲突/紧张元素
+    var climaxKeywords = ["战", "斗", "杀", "怒", "惊", "危", "险", "急", "突", "变", "爆", "冲", "决", "抗", "反", "转", "震", "撼", "狂", "激", "烈", "紧", "张"];
+    var climaxHit = 0;
+    for (var i = 0; i < climaxKeywords.length; i++) {
+      if (part3.indexOf(climaxKeywords[i]) >= 0) climaxHit++;
+    }
+
+    // 检查收束部分是否有解决/结果元素
+    var resolutionKeywords = ["解", "决", "结", "果", "成", "功", "败", "退", "定", "局", "终", "止", "平", "息", "安", "定", "落", "幕"];
+    var resolutionHit = 0;
+    for (var j = 0; j < resolutionKeywords.length; j++) {
+      if (part4.indexOf(resolutionKeywords[j]) >= 0) resolutionHit++;
+    }
+
+    var problems = [];
+    if (climaxHit < 2) problems.push("高潮部分缺乏冲突/紧张元素");
+    if (resolutionHit < 1) problems.push("收束部分缺乏解决/结果元素");
+
+    return { ok: problems.length === 0, problems: problems };
+  }
+
+  // 视角一致性检查：检测第一/第三人称混用
+  function perspectiveCheck(body) {
+    var text = String(body || "");
+    var firstPerson = (text.match(/我[的]?[们]?/g) || []).length;
+    var thirdPerson = (text.match(/[他她][的]?[们]?/g) || []).length;
+    var total = firstPerson + thirdPerson;
+    if (total < 10) return { ok: true }; // 太少无法判断
+
+    var firstRatio = firstPerson / total;
+    // 如果第一人称占比在 20%-80% 之间，认为混用
+    if (firstRatio > 0.2 && firstRatio < 0.8) {
+      return { ok: false, reason: "第一人称（我）与第三人称（他/她）混用，比例约 " + Math.round(firstRatio * 100) + "%" };
+    }
+    return { ok: true, dominant: firstRatio > 0.8 ? "first" : "third" };
+  }
+
   async function polishChapterAI(body, ch, outline, stateBlock, hook, opts) {
     if (!body || !_llm) return body;
     var hit = 0;
@@ -8958,7 +9080,11 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var totalCn = cnChars(bodyText);
     var emoDensity = totalCn ? (emoHit / totalCn) : 1;
     var emoTooLow = emoDensity < 0.005;
-    if (hit < 2 && hookOk && !tooMuchDialogue && !monotoneLong && !monotoneHe && !emoTooLow) return body;
+    // 章节内部完整性检查
+    var completeness = chapterCompletenessCheck(bodyText);
+    // 视角一致性检查
+    var perspective = perspectiveCheck(bodyText);
+    if (hit < 2 && hookOk && !tooMuchDialogue && !monotoneLong && !monotoneHe && !emoTooLow && completeness.ok && perspective.ok) return body;
     var sys =
       "你是一位资深网文编辑，擅长去AI味、调节奏。用户给你一章小说初稿，你需要润色它，要求：\n" +
       "1. 【去AI套话】把以下词替换成更自然的表达：不禁、竟然、殊不知、与此同时、值得一提的是、总而言之、综上所述、不难看出、可想而知、涌上心头、眼中闪过一丝、嘴角勾起一抹、仿佛、宛如、犹如（比喻保留不超过2次）；\n" +
@@ -8967,6 +9093,12 @@ async function aiInspireOutline(analysis, n, onProgress) {
       "4. 【钩子落地】确保全章最后一句停在指定钩子上；\n" +
       "5. 【只润色不改剧情】不得增删情节、不得改变结局、不得改变人物关系；\n" +
       "6. 直接输出润色后的完整正文，不要任何解释。";
+    if (!completeness.ok) {
+      sys += "\n7. 【完整性】本章缺乏完整的起承转合结构，请确保有清晰的引入、发展、高潮、收束四个部分；";
+    }
+    if (!perspective.ok) {
+      sys += "\n8. 【视角统一】本章第一人称与第三人称混用，请统一为第三人称（他/她）叙述；";
+    }
     var user = "【章末钩子】" + (hook || "") + "\n" + (stateBlock || "") + "\n\n【初稿】\n" + body + "\n\n请润色以上初稿，直接输出润色后的完整正文：";
     try {
       var polished = cleanBody(await chat(sys, user, 0.3, { maxTokens: opts && opts.maxTokens, model: opts && opts.model }));
@@ -9168,6 +9300,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var results = [];
     var prevTail = "";
     var prevHead = "";
+    var prevHook = "";
     var hardFloor = Math.floor(MIN_CHAPTER_CHARS * HARD_FLOOR_RATIO);
     var aiFailures = 0;
     for (var i = 0; i < chapters.length; i++) {
@@ -9216,7 +9349,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
       var hook = String(ch.hook || "");
       var body = null;
       if (hasAI) {
-        var needExpand = false, needHook = false, needAntiEcho = false;
+        var needExpand = false, needHook = false, needAntiEcho = false, needLogic = "";
         for (var attempt = 0; attempt < 3; attempt++) {
           try {
             body = await aiWriteChapter(outline, ch, analysis, prevTail, orig, {
@@ -9224,7 +9357,8 @@ async function aiInspireOutline(analysis, n, onProgress) {
               maxTokens: opts.maxTokens, model: opts.model,
               context: context, stateBlock: stateBlock,
               expandHint: needExpand, hookHint: needHook ? hook : "",
-              prevHead: prevHead, antiEcho: needAntiEcho
+              prevHead: prevHead, antiEcho: needAntiEcho,
+              logicHint: needLogic
             });
             if (cnChars(body) < hardFloor) { needExpand = true; body = null; continue; }
             if (!hookLanded(body, hook)) { needHook = true; body = null; continue; }
@@ -9240,8 +9374,15 @@ async function aiInspireOutline(analysis, n, onProgress) {
             // 跨章防雷同质检（仅非仿写路径；仿写需贴近原作，不适用）
             if (!isFollow && prevHead && openingEcho(body, prevHead)) { needAntiEcho = true; body = null; continue; }
             if (!isFollow && prevTail && tailEcho(body, prevTail)) { needAntiEcho = true; body = null; continue; }
+            // 跨章逻辑一致性质检（仅非仿写；仅前 2 次 attempt 启用，第 3 次放宽保交付，防额度竞争）
+            if (!isFollow && attempt < 2) {
+              var sj = statusJumpCheck(body, novelState);
+              if (!sj.ok) { needLogic = sj.reason; body = null; continue; }
+              var hc = hookCarryCheck(body, prevHook);
+              if (!hc.ok) { needLogic = hc.reason; body = null; continue; }
+            }
             break;
-          } catch (e) { body = null; try { console.error("[dbg-catch] ch" + idx1 + " attempt" + attempt + ": " + ((e && e.stack) || e)); } catch (_e) {} }
+          } catch (e) { body = null; }
         }
       }
       if (body == null || cnChars(body) < hardFloor) {
@@ -9263,6 +9404,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
         if (polishedBody) body = polishedBody;
         prevTail = String(body).slice(-350);
         prevHead = String(body).slice(0, 60);
+        prevHook = hook;
         if (stateUpd) mergeState(novelState, stateUpd);
       }
       body = String(body || "");
