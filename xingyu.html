@@ -2628,7 +2628,9 @@ html, body {
    * ============================================================ */
 
   // 章节标题正则
-  var CHAPTER_RE = /^\s*(第[0-9零一二三四五六七八九十百千两]+[章回节卷部集篇]|[Cc]hapter\s*\d+|序[章言曲]|前言|楔子|尾声|终章|番外篇?|后记|引子|正文完|全书完|完本感言)/;
+  var CHAPTER_RE = /^\s*(第[0-9零一二三四五六七八九十百千两]+[章回节卷部集篇话]|[Cc]hapter\s*\d+|序[章言曲]|前言|楔子|尾声|终章|番外篇?|后记|引子|正文完|全书完|完本感言)/;
+  // 纯数字标题行（"1. xxx" / "001、xxx"）：需全书候选 ≥3 且从 1 起始才启用，防正文列举误切
+  var NUM_CHAPTER_RE = /^\s*(\d{1,4})[、.．]\s*[^\d\s]/;
   var CHAPTER_PREFIX_RE = /^第[一二三四五六七八九十百千万\d]+章\s*/;
 
   // 单姓 + 复姓
@@ -2899,16 +2901,40 @@ html, body {
    * 分析器函数
    * ============================================================ */
 
+  // 长文兜底：按段落边界切成约 target 字/章（无章节标记时长文使用）
+  function splitLongText(text, target) {
+    target = target || 3000;
+    var paras = text.split(/\n+/).map(function (p) { return p.trim(); }).filter(Boolean);
+    var out = [], buf = [], n = 0;
+    for (var i = 0; i < paras.length; i++) {
+      buf.push(paras[i]); n += paras[i].length;
+      if (n >= target) { out.push(buf.join("\n")); buf = []; n = 0; }
+    }
+    if (buf.length) out.push(buf.join("\n"));
+    return out.map(function (b, idx) { return { title: "第" + (idx + 1) + "章", body: b }; });
+  }
+
   // 章节切分：正则识别标题行；无标题时按空行分块兜底
   function splitChapters(text) {
     var lines = text.split(/\r\n|\r|\n/);
+    // 预扫描：数字标题行候选 ≥3 且首个为 1 才启用数字模式，防正文列举误切
+    var numHits = 0, firstNum = -1;
+    for (var pi = 0; pi < lines.length; pi++) {
+      var ps = lines[pi].replace(/　/g, " ").trim();
+      if (ps && ps.length <= 40) {
+        var nm = ps.match(NUM_CHAPTER_RE);
+        if (nm) { if (firstNum < 0) firstNum = parseInt(nm[1], 10); numHits++; }
+      }
+    }
+    var useNum = numHits >= 3 && firstNum === 1;
     var chapters = [], cur = { title: "", body: [] }, found = false;
     function flush() {
       if (cur.body.length || cur.title) chapters.push({ title: cur.title, body: cur.body.join("\n").trim() });
     }
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i], s = line.replace(/\u3000/g, " ").trim();
-      if (s && s.length <= 40 && CHAPTER_RE.test(s)) {
+      var isTitle = s && s.length <= 40 && (CHAPTER_RE.test(s) || (useNum && NUM_CHAPTER_RE.test(s)));
+      if (isTitle) {
         flush();
         cur = { title: s, body: [] };
         found = true;
@@ -2925,9 +2951,16 @@ html, body {
       var blocks = text.split(/\n\s*\n+/).map(function (b) { return b.trim(); }).filter(Boolean);
       if (blocks.length >= 2) {
         chapters = blocks.map(function (b, idx) { return { title: "第" + (idx + 1) + "节", body: b }; });
+      } else if (text.trim().length > 8000) {
+        // 无标记长文：按段落切成约 3000 字/章，避免整本一章导致统计失真
+        chapters = splitLongText(text.trim(), 3000);
       } else {
         chapters = [{ title: "正文", body: text.trim() }];
       }
+    }
+    // 全书仅一章且超长（如有标记但只有一个标题的极端情况）：同样切分
+    if (chapters.length === 1 && chapters[0].body.length > 8000) {
+      chapters = splitLongText(chapters[0].body, 3000);
     }
     return chapters;
   }
@@ -3982,6 +4015,8 @@ html, body {
   __GLOBAL__.NovelRule = NR;
   if (typeof module !== "undefined" && module.exports) module.exports = NR; // 便于 node 冒烟
 })();
+
+
 </script>
 <script>
 /* =====================================================================
@@ -4295,16 +4330,42 @@ html, body {
    * 识别模块（移植 analyzer.py）：章节分割 / 人物提取 / 文风分析 / 题材识别
    * ===================================================================== */
 
-  var CHAPTER_RE = /^\s*(第[0-9零一二三四五六七八九十百千两]+[章回节卷部集篇]|chapter\s*\d+|序[章言曲]|前言|楔子|尾声|终章|番外篇?|后记|引子|正文完|全书完|完本感言)/i;
+  var CHAPTER_RE = /^\s*(第[0-9零一二三四五六七八九十百千两]+[章回节卷部集篇话]|chapter\s*\d+|序[章言曲]|前言|楔子|尾声|终章|番外篇?|后记|引子|正文完|全书完|完本感言)/i;
+  // 纯数字标题行（"1. xxx" / "001、xxx"）：需全书候选 ≥3 且从 1 起始才启用，防正文列举误切
+  var NUM_CHAPTER_RE = /^\s*(\d{1,4})[、.．]\s*[^\d\s]/;
+
+  // 长文兜底：按段落边界切成约 target 字/章（无章节标记时长文使用）
+  function splitLongText(text, target) {
+    target = target || 3000;
+    var paras = String(text || '').split(/\n+/).map(function (p) { return p.trim(); }).filter(Boolean);
+    var out = [], buf = [], n = 0;
+    for (var i = 0; i < paras.length; i++) {
+      buf.push(paras[i]); n += paras[i].length;
+      if (n >= target) { out.push(buf.join('\n')); buf = []; n = 0; }
+    }
+    if (buf.length) out.push(buf.join('\n'));
+    return out.map(function (b, idx) { return { title: '第' + (idx + 1) + '章', body: b, words: cnChars(b) }; });
+  }
 
   // 章节分割：返回 [{title, body, words}]；无章节标记时整体作为一章
   function splitChapters(text) {
     text = String(text || '');
     var lines = text.split('\n');
+    // 预扫描：数字标题行候选 ≥3 且首个为 1 才启用数字模式，防正文列举误切
+    var numHits = 0, firstNum = -1;
+    for (var pi = 0; pi < lines.length; pi++) {
+      var ps = lines[pi].trim();
+      if (ps && ps.length <= 40) {
+        var nm = ps.match(NUM_CHAPTER_RE);
+        if (nm) { if (firstNum < 0) firstNum = parseInt(nm[1], 10); numHits++; }
+      }
+    }
+    var useNum = numHits >= 3 && firstNum === 1;
     var chapters = [], curTitle = null, curLines = [], i;
     for (i = 0; i < lines.length; i++) {
       var s = lines[i].trim();
-      if (s && s.length <= 40 && CHAPTER_RE.test(s)) {
+      var isTitle = s && s.length <= 40 && (CHAPTER_RE.test(s) || (useNum && NUM_CHAPTER_RE.test(s)));
+      if (isTitle) {
         if (curLines.length || curTitle !== null) {
           var body = curLines.join('\n').trim();
           if (body) chapters.push({ title: curTitle || '正文', body: body, words: cnChars(body) });
@@ -4317,6 +4378,10 @@ html, body {
     var rest = curLines.join('\n').trim();
     if (rest) chapters.push({ title: curTitle || '正文', body: rest, words: cnChars(rest) });
     if (!chapters.length) chapters.push({ title: '正文', body: text, words: cnChars(text) });
+    // 全书仅一章且超长（无标记长文/单标题长文）：按段落切成约 3000 字/章，避免统计失真
+    if (chapters.length === 1 && chapters[0].body.length > 8000) {
+      chapters = splitLongText(chapters[0].body, 3000);
+    }
     return chapters;
   }
 
@@ -4767,6 +4832,47 @@ html, body {
     return scores;
   }
 
+  // 低置信反哺映射：一级类目得分过低时，用强信号流派标签反推一级类目
+  // （键须为 STREAM_TAGS 中真实存在的标签，值须为 GENRE_KEYWORDS 中真实存在的类目）
+  var TAG_TO_GENRE = {
+    "宫斗": "古代言情", "宅斗": "古代言情", "嫡女": "古代言情", "冲喜": "古代言情",
+    "签到流": "系统流", "系统流": "系统流",
+    "直播": "直播/网红",
+    "赘婿": "战神/赘婿", "战神归来": "战神/赘婿",
+    "神豪": "神豪文",
+    "奶爸": "奶爸文", "萌宝": "奶爸文",
+    "马甲": "马甲文",
+    "快穿": "幻想言情", "穿书": "幻想言情",
+    "女帝": "女强/大女主", "摄政": "女强/大女主", "女强": "女强/大女主",
+    "洪荒": "洪荒流", "封神": "洪荒流",
+    "种田流": "种田流", "乡村": "种田流",
+    "年代文": "都市", "鉴宝": "都市",
+    "末世": "末世/异能", "废土": "末世/异能", "进化流": "末世/异能", "异能": "末世/异能",
+    "机甲": "科幻", "星舰": "星际/宇宙",
+    "规则怪谈": "规则怪谈",
+    "盗墓": "盗墓/探险", "探险": "盗墓/探险",
+    "克苏鲁": "克苏鲁",
+    "电竞": "游戏/电竞", "网游": "游戏/电竞",
+    "娱乐圈": "娱乐圈",
+    "美食": "美食流",
+    "体育": "体育竞技", "篮球": "体育竞技", "足球": "体育竞技",
+    "剑修": "仙侠/修真", "炼丹": "仙侠/修真", "炼器": "仙侠/修真", "宗门": "仙侠/修真", "道侣": "仙侠/修真", "蜀山": "仙侠/修真",
+    "江湖": "武侠",
+    "官场": "官场", "商战": "商战",
+    "神医": "神医/医仙",
+    "同人": "同人", "综漫": "同人",
+    "无限流": "无限流", "诸天流": "诸天流",
+    "重生": "重生/穿越", "穿越": "重生/穿越",
+    "学霸": "校园",
+    "甜宠": "甜宠",
+    "先婚后爱": "现代言情", "追妻火葬场": "现代言情", "破镜重圆": "现代言情",
+    "聊斋": "灵异/怪谈",
+    "朝堂": "历史", "权谋": "历史", "争霸": "历史", "架空历史": "历史",
+    "赛博朋克": "赛博朋克",
+    "御兽": "玄幻/奇幻",
+    "变身": "轻小说/二次元"
+  };
+
   // 识别一级分类与流派标签，返回 {genre, ranked, tags}
   function detectGenre(text) {
     var cache = {};
@@ -4779,6 +4885,13 @@ html, body {
     var tags = objKeys(tagScores).map(function (k) { return [k, tagScores[k]]; })
       .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 6)
       .map(function (x) { return x[0]; });
+    // 低置信反哺：一级类目第 1 名得分 <6 时，按标签得分顺序找第一个强信号映射
+    if ((ranked.length ? ranked[0][1] : 0) < 6) {
+      for (var ti = 0; ti < tags.length; ti++) {
+        var g2 = TAG_TO_GENRE[tags[ti]];
+        if (g2) { genre = g2; if (!ranked.length) ranked = [[g2, 0]]; break; }
+      }
+    }
     return { genre: genre, ranked: ranked.slice(0, 3), tags: tags };
   }
 
@@ -6373,12 +6486,23 @@ html, body {
     return lines.join("\n");
   }
 
+  // 爽点六型的写作指令（供写章 prompt 注入「本章爽点任务」）
+  var SATISFY_BRIEF = {
+    "打脸": "让轻视或压制主角的一方被当场回击，围观者态度反转，读者要感到痛快",
+    "装逼": "让主角展示超规格的实力、见识或资源，旁人震惊，此前的轻视被重新定义",
+    "收获": "让主角获得实质性的实力、资源、地位或关键信息提升，成果具体可感",
+    "反转": "颠覆既有认知，让真相或局势朝意外方向发展，须有前文伏笔支撑",
+    "揭秘": "揭露一个悬念、身份或阴谋的部分真相，解答旧疑问的同时抛出新疑问",
+    "情感": "推进一段关系或情感浓度，让人物情感有明确进展或爆发"
+  };
+
   function chapterSpecText(ch) {
     if (!ch || typeof ch !== "object") ch = {};
+    var st = validSatisfy(ch.satisfy, ch.no);
     return "◆ 剧情：" + (ch.plot || "") + "\n" +
       "◆ 核心冲突：" + (ch.conflict || "") + "\n" +
-      "◆ 本章爽点：" + (ch.payoff || "—") + "\n" +
-      "◆ 章末钩子：" + (ch.hook || "");
+      "◆ 本章爽点任务（" + st + "型）：" + SATISFY_BRIEF[st] + "。爽点描述：" + (ch.payoff || "—") + "\n" +
+      "◆ 章末钩子（建议「" + hookTypeForNo(ch.no) + "」型，与相邻章钩子类型错开）：" + (ch.hook || "");
   }
 
   // ---------- 本地大纲生成（creator.LocalOutliner） ----------
@@ -6548,7 +6672,8 @@ html, body {
         no: i, title: beatTitle, plot: plot,
         conflict: choice(rng, CONFLICTS),
         hook: hook,
-        payoff: choice(rng, PAYOFFS)
+        payoff: choice(rng, PAYOFFS),
+        satisfy: satisfyForNo(i)
       });
     }
     return {
@@ -6977,6 +7102,22 @@ html, body {
     return GENRE_PLACEHOLDER["通用"];
   }
 
+  /* ---------- 爽点排期：六型轮换 + 钩子五型轮换 ---------- */
+  // 爽点六型：打脸/装逼/收获/反转/揭秘/情感，按章号轮换避免连续同型审美疲劳
+  var SATISFY_TYPES = ["打脸", "装逼", "收获", "反转", "揭秘", "情感"];
+  // 钩子五型：危机/悬念/反转/新信息/情感，按章号轮换
+  var HOOK_TYPES = ["危机降临", "悬念留白", "反转揭晓", "新信息冲击", "情感爆点"];
+  function satisfyForNo(no) { return SATISFY_TYPES[(Math.max(1, safeInt(no, 1)) - 1) % SATISFY_TYPES.length]; }
+  function hookTypeForNo(no) { return HOOK_TYPES[(Math.max(1, safeInt(no, 1)) - 1) % HOOK_TYPES.length]; }
+  // 校验 AI 返回的 satisfy：命中六型之一则采纳，否则按章号公式兜底
+  function validSatisfy(v, no) {
+    var s = String(v || "");
+    for (var i = 0; i < SATISFY_TYPES.length; i++) {
+      if (s.indexOf(SATISFY_TYPES[i]) >= 0) return SATISFY_TYPES[i];
+    }
+    return satisfyForNo(no);
+  }
+
   function fillMissingChapters(chs, n, analysis) {
     var rng = makeRng(chs.length * 7 + 13); // 种子随已有章节数变化，避免每次补齐剧情完全相同
     var gp = genrePlaceholderFor(analysis && analysis.genre);
@@ -6999,7 +7140,8 @@ html, body {
       chs.push({
         no: no, title: title,
         plot: choice(rng, plots), conflict: choice(rng, conflicts),
-        hook: choice(rng, hooks), payoff: choice(rng, payoffs)
+        hook: choice(rng, hooks), payoff: choice(rng, payoffs),
+        satisfy: satisfyForNo(no)
       });
     }
     if (chs.length) {
@@ -7231,7 +7373,8 @@ html, body {
       out.chapters.push({
         no: no, title: title,
         plot: String(ch.plot || ""), conflict: String(ch.conflict || ""),
-        hook: String(ch.hook || ""), payoff: String(ch.payoff || "")
+        hook: String(ch.hook || ""), payoff: String(ch.payoff || ""),
+        satisfy: validSatisfy(ch.satisfy, no)
       });
     }
     if (!out.chapters.length) throw new Error("大纲中没有章节");
@@ -7304,13 +7447,16 @@ html, body {
       "2. 每章必须给出：标题（具体事件名，不要“风云突变”这类空泛词）、" +
         "plot（2-3 句话写清本章具体发生了什么，含关键动作与信息）、" +
         "conflict（本章核心冲突）、hook（本章最后一句停在什么钩子上，必须具体）、" +
-        "payoff（本章爽点）；",
+        "payoff（本章爽点）、satisfy（本章爽点类型，必须从「打脸/装逼/收获/反转/揭秘/情感」六型中选一）；",
       "3. 章节之间必须有清晰递进：局势、实力、关系每章都要有变化；",
-      "4. 语言为简体中文。",
+      "4. 爽点排期：相邻章节的 satisfy 类型必须错开，全书六型均匀轮换，禁止连续两章同型；" +
+        "章末钩子按「危机降临/悬念留白/反转揭晓/新信息冲击/情感爆点」五型轮换，禁止连续同型；",
+      "5. 语言为简体中文。",
       "",
       '只输出 JSON：{"chapters":[{"no":<章节号>,"title":"具体事件名",' +
         '"plot":"2-3句话的具体剧情","conflict":"核心冲突",' +
-        '"hook":"本章最后一句停在哪个钩子","payoff":"本章爽点"}]}' +
+        '"hook":"本章最后一句停在哪个钩子","payoff":"本章爽点",' +
+        '"satisfy":"打脸|装逼|收获|反转|揭秘|情感 之一"}]}' +
         (lo === 1 ? ("（另需输出顶层字段：" +
           '"title":"书名","premise":"一句话卖点",' +
           '"synopsis":"面向读者的小说简介（200-400字，番茄式文案：主角处境+核心冲突+爽点预告，有吸引力）",' +
@@ -8007,7 +8153,9 @@ async function inspireCreateOutline(core, n, analysis, onProgress) {
     "5. 每章 plot 用 2-4 句话写清完整逻辑链（起因→经过→结果），不能太简略；\n" +
     "6. 节奏分配：前期（前30%章节）铺垫世界观和金手指，中期（40%章节）发展冲突，" +
     "后期（30%章节）高潮+结局；\n" +
-    "7. 每章 conflict 必须有具体冲突，hook 必须有章末悬念；\n" +
+    "7. 每章 conflict 必须有具体冲突，hook 必须有章末悬念；" +
+    "每章 satisfy 必须从「打脸/装逼/收获/反转/揭秘/情感」六型中选一，" +
+    "相邻章节爽点类型必须错开、全书均匀轮换；章末钩子按「危机降临/悬念留白/反转揭晓/新信息冲击/情感爆点」五型轮换；\n" +
     "【剧情深度·核心要求】\n" +
     "8. 每章必须有明暗两层冲突：明面事件对抗 + 暗线信息差/人心算计，" +
     "禁止只有「主角打赢反派」的直线剧情；\n" +
@@ -8027,7 +8175,7 @@ async function inspireCreateOutline(core, n, analysis, onProgress) {
     '"world":"世界观设定",' +
     '"characters":[{"name":"人名","role":"身份","personality":"性格","motivation":"动机"}],' +
     '"arcs":[{"name":"部分名","goal":"目标","conflict":"冲突","resolution":"结局"}],' +
-    '"chapters":[{"no":1,"title":"章标题","plot":"2-4句话剧情","conflict":"核心冲突","hook":"章末悬念"}]}';
+    '"chapters":[{"no":1,"title":"章标题","plot":"2-4句话剧情","conflict":"核心冲突","hook":"章末悬念","satisfy":"打脸|装逼|收获|反转|揭秘|情感 之一"}]}';
   try {
     var raw = await chat(sys, user, 0.8);
     var data = parseOutlineJson(raw);
@@ -8072,7 +8220,7 @@ async function inspireCreateOutline(core, n, analysis, onProgress) {
         "核心创意：" + String(core || "").slice(0, 500) + "\n" +
         'JSON格式：{"title":"书名","premise":"简介","synopsis":"面向读者的小说简介（200-400字）","world":"世界观",' +
         '"characters":[{"name":"人名","role":"身份","personality":"性格"}],' +
-        '"chapters":[{"no":1,"title":"标题","plot":"剧情","conflict":"冲突","hook":"悬念"}]}';
+        '"chapters":[{"no":1,"title":"标题","plot":"剧情","conflict":"冲突","hook":"悬念","satisfy":"打脸|装逼|收获|反转|揭秘|情感 之一"}]}';
       var raw3 = await chat("只输出JSON，不要任何解释。", retryUser2, 0.7);
       var data3 = parseOutlineJson(raw3);
       var chs3 = data3.chapters || [];
@@ -8742,7 +8890,9 @@ async function aiInspireOutline(analysis, n, onProgress) {
       "2. 大纲必须正好 " + n + " 章，不多不少；\n" +
       "3. 第 " + n + " 章必须是全书结局，收束所有主线，给主要人物明确归宿；\n" +
       "4. 每章 plot 用 2-4 句话写清完整逻辑链（起因→经过→结果），不能太简略；\n" +
-      "5. 每章 conflict 必须有具体冲突，hook 必须有章末悬念；\n" +
+      "5. 每章 conflict 必须有具体冲突，hook 必须有章末悬念；" +
+      "每章 satisfy 必须从「打脸/装逼/收获/反转/揭秘/情感」六型中选一，" +
+      "相邻章节爽点类型必须错开、全书均匀轮换；章末钩子按「危机降临/悬念留白/反转揭晓/新信息冲击/情感爆点」五型轮换；\n" +
       "6. 反转必须有伏笔支撑，禁止机械降神。\n" +
       "输出 JSON，不要任何解释文字。";
     var user =
@@ -8754,7 +8904,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
       '"world":"世界观设定",' +
       '"characters":[{"name":"人名","role":"身份","personality":"性格","motivation":"动机"}],' +
       '"arcs":[{"name":"部分名","goal":"目标","conflict":"冲突","resolution":"结局"}],' +
-      '"chapters":[{"no":1,"title":"章标题","plot":"2-4句话剧情","conflict":"核心冲突","hook":"章末悬念"}]}';
+      '"chapters":[{"no":1,"title":"章标题","plot":"2-4句话剧情","conflict":"核心冲突","hook":"章末悬念","satisfy":"打脸|装逼|收获|反转|揭秘|情感 之一"}]}';
     var data = await chatJson(sys, user, 0.85, opts);
     var chs = (data && data.chapters) || [];
     if (chs.length > n) chs = chs.slice(0, n);
@@ -9051,6 +9201,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
   G.NovelCreator = NC;
   if (typeof module !== "undefined" && module.exports) module.exports = NC;
 })();
+
 </script>
 <script>
 // ========== STATE ==========
@@ -10523,12 +10674,20 @@ function nvReadFile(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    nvState.sources.push({ title: file.name, text: String(reader.result || '') });
+    let text = '';
+    try {
+      // 先按 UTF-8 严格解码；失败（多为 GBK 编码的老 txt）自动转 GBK 解码
+      text = new TextDecoder('utf-8', { fatal: true }).decode(reader.result);
+    } catch (e) {
+      try { text = new TextDecoder('gbk').decode(reader.result); }
+      catch (e2) { text = new TextDecoder('utf-8').decode(reader.result); }
+    }
+    nvState.sources.push({ title: file.name, text: String(text || '') });
     showToast('已导入：' + file.name);
     nvRender();
   };
   reader.onerror = () => showToast('文件读取失败');
-  reader.readAsText(file, 'utf-8');
+  reader.readAsArrayBuffer(file);
   input.value = '';
 }
 function nvDelSource(i) { nvState.sources.splice(i, 1); nvRender(); }
