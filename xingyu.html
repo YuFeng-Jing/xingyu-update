@@ -7939,7 +7939,7 @@ html, body {
    人物、世界观、具体剧情全部重新设计。 */
 
 // 第一步：通读原作，提炼核心创意灵感（金手指、核心冲突、主题、流派）
-function inspireExtractCore(analysis) {
+async function inspireExtractCore(analysis) {
   var chapters = (analysis && analysis.chapters) || [];
   // 采样策略：前3章（开头）+ 中间1章（发展）+ 最后1章（结局），让AI理解完整结构
   var idxs = [0, 1, 2];
@@ -7983,7 +7983,7 @@ function inspireExtractCore(analysis) {
     "【原作章节样本】（开头+发展+结尾）\n" + sample + "\n\n" +
     "请提炼核心创意灵感：";
   try {
-    return chat(sys, user, 0.7);
+    return await chat(sys, user, 0.7);
   } catch (e) {
     try { console.error("[AIInspireOutliner] 核心提炼失败：" + ((e && e.message) || e)); } catch (_e) {}
     return "";
@@ -7991,7 +7991,7 @@ function inspireExtractCore(analysis) {
 }
 
 // 第二步：基于核心灵感，全新生成 n 章大纲
-function inspireCreateOutline(core, n, analysis, onProgress) {
+async function inspireCreateOutline(core, n, analysis, onProgress) {
   var tags = (analysis && analysis.tags) || [];
   var tagStr = tags.length ? tags.slice(0, 5).join("、") : "";
   var srcTitle = (analysis && analysis.title) || "新作";
@@ -8029,7 +8029,7 @@ function inspireCreateOutline(core, n, analysis, onProgress) {
     '"arcs":[{"name":"部分名","goal":"目标","conflict":"冲突","resolution":"结局"}],' +
     '"chapters":[{"no":1,"title":"章标题","plot":"2-4句话剧情","conflict":"核心冲突","hook":"章末悬念"}]}';
   try {
-    var raw = chat(sys, user, 0.8);
+    var raw = await chat(sys, user, 0.8);
     var data = parseOutlineJson(raw);
     // 校验章节数，不足时重试一次要求补齐
     var chs = data.chapters || [];
@@ -8040,7 +8040,7 @@ function inspireCreateOutline(core, n, analysis, onProgress) {
         "请补齐到正好 " + n + " 章，输出完整 JSON。" +
         "每章 plot 用 2-4 句话写清完整逻辑链，hook 必须有章末悬念。只输出 JSON。";
       try {
-        var raw2 = chat(sys, retryUser, 0.7);
+        var raw2 = await chat(sys, retryUser, 0.7);
         var data2 = parseOutlineJson(raw2);
         var chs2 = data2.chapters || [];
         if (chs2.length > chs.length) { chs = chs2; data = data2; }
@@ -8073,7 +8073,7 @@ function inspireCreateOutline(core, n, analysis, onProgress) {
         'JSON格式：{"title":"书名","premise":"简介","synopsis":"面向读者的小说简介（200-400字）","world":"世界观",' +
         '"characters":[{"name":"人名","role":"身份","personality":"性格"}],' +
         '"chapters":[{"no":1,"title":"标题","plot":"剧情","conflict":"冲突","hook":"悬念"}]}';
-      var raw3 = chat("只输出JSON，不要任何解释。", retryUser2, 0.7);
+      var raw3 = await chat("只输出JSON，不要任何解释。", retryUser2, 0.7);
       var data3 = parseOutlineJson(raw3);
       var chs3 = data3.chapters || [];
       if (chs3.length > n) chs3 = chs3.slice(0, n);
@@ -8109,9 +8109,9 @@ async function aiInspireOutline(analysis, n, onProgress) {
       characters: [], arcs: [], chapters: [] };
   }
   if (onProgress) onProgress("通读原作，提炼核心创意…");
-  var core = inspireExtractCore(analysis);
+  var core = await inspireExtractCore(analysis);
   if (onProgress) onProgress("基于核心灵感，原创 " + n + " 章大纲…");
-  return inspireCreateOutline(core, n, analysis, onProgress);
+  return await inspireCreateOutline(core, n, analysis, onProgress);
 }
 
   /* =====================================================================
