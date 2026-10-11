@@ -6480,7 +6480,7 @@ html, body {
       var ch = chs[k];
       if (!ch || typeof ch !== "object") continue;
       lines.push("第" + (ch.no !== undefined ? ch.no : "?") + "章《" + (ch.title || "") + "》" + (ch.plot || "") +
-        "（冲突：" + (ch.conflict || "") + "；爽点：" + (ch.payoff || "—") +
+        "（冲突：" + (ch.conflict || "") + "；爽点：" + (ch.satisfy ? "[" + ch.satisfy + "] " : "") + (ch.payoff || "—") +
         "；钩子：" + (ch.hook || "") + "）");
     }
     return lines.join("\n");
@@ -9172,7 +9172,8 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var ch = {
       no: safeInt(oc.no, idx + 1),
       title: oc.title || old.title || ("第" + (idx + 1) + "章"),
-      plot: oc.plot || "", conflict: oc.conflict || "", hook: oc.hook || ""
+      plot: oc.plot || "", conflict: oc.conflict || "", hook: oc.hook || "",
+      satisfy: oc.satisfy || ""
     };
     // 无细纲时从旧稿提炼一句剧情，保证重写不跑题
     if (!ch.plot) {
