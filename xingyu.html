@@ -2967,6 +2967,25 @@ function savePromptSheet() {
   showToast('系统提示词已保存');
 }
 
+// 系统返回手势分发：关闭最上层浮层；返回 'root' 表示已在主页（Android 侧据此退出）
+function xyHandleBack() {
+  try {
+    const q = s => document.querySelector(s);
+    const open = (sel) => { const el = q(sel); return !!(el && el.classList.contains('open')); };
+    if (open('#msg-menu-overlay')) { closeMsgSheet(); return 'ok'; }          // 消息长按菜单
+    if (open('#file-overlay')) { closeAllMenus(); return 'ok'; }              // 发文件/思考倍率菜单
+    if (open('#ep-menu')) { q('#ep-menu').classList.remove('open'); return 'ok'; } // endpoint 菜单
+    if (open('#addm-overlay')) { closeAddModel(); return 'ok'; }              // 添加模型弹窗
+    if (open('#prompt-overlay')) { closePromptSheet(); return 'ok'; }         // 系统提示词弹窗
+    if (open('#settings-detail')) { closeDetail(); return 'ok'; }             // 设置详情页
+    if (open('#drawer')) { toggleDrawer(false); return 'ok'; }                // 对话历史抽屉
+    const hm = q('#home-messages');                                           // 对话态返回主页欢迎区
+    if (hm && hm.style.display === 'flex') { newHomeChat(); return 'ok'; }
+  } catch (e) { /* 异常时按主页处理 */ }
+  return 'root';
+}
+window.xyHandleBack = xyHandleBack;
+
 function closeDetail() {
   document.getElementById('settings-detail').classList.remove('open');
 }
