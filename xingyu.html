@@ -1245,6 +1245,62 @@ html, body {
   #app { max-width: 420px; margin: 0 auto; box-shadow: 0 0 40px rgba(0,0,0,0.1); border-radius: 24px; }
   body { display: flex; align-items: center; justify-content: center; background: #e8e8ed; }
 }
+/* ========== PROVIDER DETAIL (配置/模型 双Tab) ========== */
+.pv-tabs { display: flex; gap: 10px; margin-bottom: 4px; }
+.pv-tab {
+  flex: 1; padding: 13px 0; text-align: center; font-size: 15px; font-weight: 500;
+  color: var(--text); background: var(--section-label-bg); border-radius: 16px; cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s; border: 1px solid transparent;
+}
+.pv-tab.active { background: var(--card); border-color: var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+.pcf-group { background: var(--section-label-bg); border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.pcf-field { background: var(--card); border-radius: 14px; padding: 9px 14px 11px; }
+[data-theme="dark"] .pcf-field { background: rgba(255,255,255,0.05); }
+.pcf-label { font-size: 11px; color: var(--text2); margin-bottom: 2px; }
+.pcf-input { width: 100%; border: none; outline: none; background: transparent; font-size: 15px; color: var(--text); font-family: inherit; }
+.pcf-eye { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); cursor: pointer; display: flex; }
+.pcf-eye svg { width: 20px; height: 20px; stroke: var(--text); }
+.ep-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 210px;
+  background: var(--card); border-radius: 16px; padding: 6px; box-shadow: 0 8px 32px rgba(0,0,0,0.16);
+  border: 1px solid var(--border); display: none;
+}
+.ep-menu.open { display: block; }
+.ep-item { padding: 11px 14px; font-size: 14.5px; color: var(--text); border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; white-space: nowrap; }
+.ep-item:active { background: var(--section-label-bg); }
+.ep-item .ep-check { color: #0a84ff; font-weight: 700; display: none; }
+.ep-item.sel { color: #0a84ff; }
+.ep-item.sel .ep-check { display: inline; }
+.hdr-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.hdr-row .ff-input { flex: 1; }
+.hdr-del { color: #e02020; font-size: 18px; padding: 6px 8px; cursor: pointer; flex-shrink: 0; }
+.btn-danger-block {
+  width: 100%; margin-top: 10px; padding: 15px; border-radius: 18px; border: none; cursor: pointer;
+  background: var(--card); color: #d32f2f; font-size: 15.5px; font-weight: 600; font-family: inherit;
+}
+.addhdr-btn { display: flex; align-items: center; gap: 10px; padding: 12px 4px; color: #0a84ff; font-size: 15px; font-weight: 500; cursor: pointer; }
+.addhdr-btn svg { width: 20px; height: 20px; stroke: #0a84ff; }
+.pm-card { display: flex; align-items: center; gap: 12px; padding: 13px 4px; cursor: pointer; }
+.pm-card + .pm-card { border-top: 1px solid var(--border); }
+.pm-ic { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.pm-ic svg { width: 24px; height: 24px; }
+.pm-info { flex: 1; min-width: 0; }
+.pm-title { font-size: 15px; font-weight: 500; color: var(--text); }
+.pm-sub { font-size: 12.5px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-status { font-size: 12.5px; padding: 0 4px; margin-top: 8px; }
+.pm-status.ok { color: #34a853; }
+.pm-status.err { color: #e02020; }
+.model-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 14px 16px; margin-bottom: 10px; }
+.model-card .mc-top { display: flex; align-items: center; gap: 10px; }
+.model-card .mc-name { font-size: 16.5px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-card .mc-id { font-size: 12.5px; color: var(--text2); margin-top: 2px; }
+.model-card .mc-ic { color: var(--text2); display: flex; cursor: pointer; flex-shrink: 0; }
+.model-card .mc-ic svg { width: 20px; height: 20px; }
+.model-card .mc-check { color: #0a84ff; display: flex; flex-shrink: 0; }
+.model-card .mc-check svg { width: 22px; height: 22px; }
+.model-tags { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.mtag { font-size: 11px; padding: 3px 8px; border-radius: 7px; background: var(--section-label-bg); color: var(--text2); }
+.mtag.blue { background: rgba(10,132,255,0.12); color: #0a84ff; }
 </style>
 </head>
 <body>
@@ -1449,7 +1505,7 @@ html, body {
             </div>
             <div class="s-info">
               <div class="s-title">模型提供商</div>
-              <div class="s-sub">内置服务 / agnes-3.0-flash</div>
+              <div class="s-sub" id="prov-sub">内置服务 / agnes-3.0-flash</div>
             </div>
             <div class="s-arrow"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
           </div>
@@ -1565,6 +1621,37 @@ html, body {
   <div class="sheet-actions">
     <button class="btn-cancel" onclick="closePromptSheet()">取消</button>
     <button class="btn-confirm" onclick="savePromptSheet()">保存</button>
+  </div>
+</div>
+
+<!-- ========== 添加/编辑模型 BOTTOM SHEET ========== -->
+<div class="sheet-overlay" id="addm-overlay" onclick="closeAddModel()"></div>
+<div class="sheet" id="addm-sheet">
+  <div class="sheet-title">添加模型</div>
+  <div style="display:flex; flex-direction:column; gap:10px">
+    <div class="pcf-field">
+      <div class="pcf-label">展示名称</div>
+      <input class="pcf-input" id="addm-name" placeholder=""/>
+    </div>
+    <div class="pcf-field">
+      <input class="pcf-input" id="addm-id" placeholder="Model ID"/>
+    </div>
+    <div class="pcf-field">
+      <input class="pcf-input" id="addm-ctx" placeholder="上下文窗口（tokens）" inputmode="numeric"/>
+    </div>
+  </div>
+  <div style="font-size:12px; color:var(--text2); margin-top:8px; line-height:1.6" id="addm-ctx-hint">自动：远端未提供上下文上限<br/>该值用于会话裁剪和上下文预判。留空时使用远端官方目录值。</div>
+  <div class="tg-row" style="padding:14px 0 4px">
+    <div class="tg-info">
+      <div class="tg-title">支持思考</div>
+      <div class="dd-sub" id="addm-think-sub">自动：不支持或未知</div>
+    </div>
+    <div class="toggle" id="addm-think" onclick="this.classList.toggle('on'); document.getElementById('addm-think-sub').textContent = this.classList.contains('on') ? '支持' : '不支持'"></div>
+  </div>
+  <div style="font-size:12px; color:var(--text2); line-height:1.6">仅勾选模型或网关实际支持的档位；不支持的组合会在请求前明确报错。</div>
+  <div class="sheet-actions">
+    <button class="btn-cancel" onclick="closeAddModel()">取消</button>
+    <button class="btn-confirm" id="addm-save" onclick="saveAddModel()" style="opacity:0.45; pointer-events:none">保存</button>
   </div>
 </div>
 
@@ -1933,6 +2020,233 @@ const LLM_CONFIG = {
   model: 'agnes-3.0-flash'
 };
 
+// ========== 提供商配置 + 模型管理（设置-模型提供商详情页） ==========
+const PROVIDER_DEFAULT = {
+  name: '内置服务',
+  baseUrl: 'https://xiaomi78.top/v1',
+  apiKey: 'sk-yzmaBStHk8DyIBfcSL3os3L9cOUYM78RGvCtq3pQFVPDPyZ4',
+  endpoint: 'chat',       // chat | responses
+  headers: [],            // [{k,v}]
+  enabled: true,
+  fetchMsg: '', fetchOk: false
+};
+function loadJSON(k, def) { try { const r = localStorage.getItem(k); return r ? (JSON.parse(r) || def) : def; } catch (e) { return def; } }
+function saveJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+let PROVIDER = Object.assign({}, PROVIDER_DEFAULT, loadJSON('xyy_provider', {}));
+let modelList = loadJSON('xyy_models', [{ id: 'agnes-3.0-flash', name: 'agnes-3.0-flash', ctx: null, think: true }]);
+let currentModel = localStorage.getItem('xyy_current_model') || 'agnes-3.0-flash';
+if (!modelList.some(m => m.id === currentModel)) currentModel = modelList[0] ? modelList[0].id : '';
+let hdrDraft = [];          // 请求头编辑草稿（保存配置时生效）
+let addmEditId = null;      // 弹窗正在编辑的模型 id；null=新增
+
+function persistProvider() { saveJSON('xyy_provider', PROVIDER); }
+function persistModels() { saveJSON('xyy_models', modelList); localStorage.setItem('xyy_current_model', currentModel); }
+
+// 把提供商配置同步进聊天请求（设置页 sub 行同步更新）
+function syncLLMConfig() {
+  LLM_CONFIG.key = PROVIDER.apiKey;
+  LLM_CONFIG.model = currentModel;
+  LLM_CONFIG.base = (PROVIDER.baseUrl || '').replace(/\/+$/, '');
+  LLM_CONFIG.endpoint = PROVIDER.endpoint;
+  LLM_CONFIG.extraHeaders = (PROVIDER.headers || []).filter(h => h.k && h.k.trim());
+  LLM_CONFIG.url = LLM_CONFIG.base + (PROVIDER.endpoint === 'responses' ? '/responses' : '/chat/completions');
+  const sub = document.getElementById('prov-sub');
+  if (sub) sub.textContent = PROVIDER.name + ' / ' + currentModel;
+}
+
+function pvSwitchTab(which) {
+  const cfg = document.getElementById('pv-pane-cfg'), md = document.getElementById('pv-pane-models');
+  const tc = document.getElementById('pvtab-cfg'), tm = document.getElementById('pvtab-models');
+  if (!cfg || !md) return;
+  const showCfg = which === 'cfg';
+  cfg.style.display = showCfg ? '' : 'none';
+  md.style.display = showCfg ? 'none' : '';
+  if (tc) tc.classList.toggle('active', showCfg);
+  if (tm) tm.classList.toggle('active', !showCfg);
+  if (!showCfg) renderModelCards();
+}
+
+function toggleEpMenu() {
+  const m = document.getElementById('ep-menu');
+  if (m) m.classList.toggle('open');
+}
+function pickEndpoint(v) {
+  PROVIDER.endpoint = v;
+  const label = v === 'responses' ? 'Responses API' : 'Chat Completions API';
+  const val = document.getElementById('pv-ep-val'), sub = document.getElementById('pv-ep-sub');
+  if (val) val.textContent = label;
+  if (sub) sub.textContent = '使用 ' + label;
+  const menu = document.getElementById('ep-menu');
+  if (menu) {
+    menu.classList.remove('open');
+    menu.querySelectorAll('.ep-item').forEach(it => it.classList.toggle('sel', it.dataset.v === v));
+  }
+  persistProvider(); syncLLMConfig();
+}
+document.addEventListener('click', e => {
+  const m = document.getElementById('ep-menu');
+  if (m && m.classList.contains('open') && !m.contains(e.target)) m.classList.remove('open');
+});
+
+async function testProviderConn(el) {
+  const base = (document.getElementById('pv-cfg-url')?.value || PROVIDER.baseUrl).replace(/\/+$/, '');
+  const key = document.getElementById('pv-cfg-key')?.value || PROVIDER.apiKey;
+  const old = el.textContent;
+  el.textContent = '测试中…'; el.style.pointerEvents = 'none';
+  try {
+    const res = await fetch(base + '/models', { headers: { 'Authorization': 'Bearer ' + key } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const n = (data?.data || []).length;
+    el.textContent = '连接成功，' + n + ' 个模型';
+    showToast('连接成功');
+  } catch (e) {
+    el.textContent = '连接失败：' + String(e.message || e).slice(0, 40);
+    showToast('连接失败');
+  }
+  el.style.pointerEvents = '';
+  setTimeout(() => { el.textContent = old; }, 2500);
+}
+
+function toggleHdrBox() {
+  const box = document.getElementById('pv-hdr-box'), arrow = document.getElementById('pv-hdr-arrow');
+  if (!box) return;
+  const show = box.style.display === 'none';
+  box.style.display = show ? '' : 'none';
+  if (arrow) arrow.style.transform = show ? 'rotate(180deg)' : '';
+  if (show) renderHdrRows();
+}
+function renderHdrRows() {
+  const list = document.getElementById('pv-hdr-list');
+  if (!list) return;
+  list.innerHTML = hdrDraft.map((h, i) => `
+    <div class="hdr-row">
+      <input class="ff-input" placeholder="Header 名称" value="${(h.k || '').replace(/"/g, '&quot;')}" oninput="hdrDraft[${i}].k=this.value"/>
+      <input class="ff-input" placeholder="值" value="${(h.v || '').replace(/"/g, '&quot;')}" oninput="hdrDraft[${i}].v=this.value"/>
+      <div class="hdr-del" onclick="hdrDraft.splice(${i},1); renderHdrRows(); updateHdrTitle()">✕</div>
+    </div>`).join('');
+  updateHdrTitle();
+}
+function addHdrRow() { hdrDraft.push({ k: '', v: '' }); renderHdrRows(); }
+function updateHdrTitle() {
+  const t = document.getElementById('pv-hdr-title');
+  const n = hdrDraft.filter(h => h.k && h.k.trim()).length;
+  if (t) t.textContent = n ? '已设置 ' + n + ' 条' : '未设置';
+}
+
+function saveProviderCfg() {
+  const g = id => (document.getElementById(id) || {}).value;
+  PROVIDER.name = (g('pv-cfg-name') || '').trim() || '内置服务';
+  PROVIDER.baseUrl = (g('pv-cfg-url') || '').trim();
+  PROVIDER.apiKey = g('pv-cfg-key') || '';
+  PROVIDER.enabled = document.getElementById('pv-cfg-enabled')?.classList.contains('on') !== false;
+  PROVIDER.headers = hdrDraft.filter(h => h.k && h.k.trim()).map(h => ({ k: h.k.trim(), v: h.v || '' }));
+  if (!PROVIDER.baseUrl) { showToast('Base URL 不能为空'); return; }
+  persistProvider(); syncLLMConfig();
+  showToast('配置已保存');
+}
+function resetProviderCfg() {
+  PROVIDER = JSON.parse(JSON.stringify(PROVIDER_DEFAULT));
+  hdrDraft = [];
+  persistProvider(); syncLLMConfig();
+  openDetail('providerDetail');
+  showToast('已重置为内置配置');
+}
+
+function renderModelCards() {
+  const wrap = document.getElementById('pv-mc-list');
+  if (!wrap) return;
+  const q = (document.querySelector('#pv-pane-models .sd-search input')?.value || '').trim().toLowerCase();
+  const shown = modelList.filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q));
+  document.getElementById('pv-mc-count').textContent = `模型列表（共 ${shown.length} 个）`;
+  const gear = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg>';
+  const check = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>';
+  wrap.innerHTML = shown.map(m => `
+    <div class="model-card">
+      <div class="mc-top">
+        <div style="flex:1; min-width:0" onclick="selectModel('${m.id}')" style="cursor:pointer">
+          <div class="mc-name">${m.name || m.id}</div>
+          <div class="mc-id">${m.id}</div>
+        </div>
+        <div class="mc-ic" onclick="openAddModel('${m.id}')">${gear}</div>
+        ${m.id === currentModel ? `<div class="mc-check">${check}</div>` : ''}
+      </div>
+      <div class="model-tags" onclick="selectModel('${m.id}')">
+        <span class="mtag">${m.ctx ? '上下文 ' + m.ctx : '上下文未知'}</span>
+        <span class="mtag">${m.think ? '支持思考' : '不支持思考'}</span>
+        ${m.id === currentModel ? '<span class="mtag blue">当前</span>' : ''}
+      </div>
+    </div>`).join('');
+}
+function selectModel(id) {
+  currentModel = id;
+  persistModels(); syncLLMConfig(); renderModelCards();
+  showToast('已切换模型：' + id);
+}
+
+async function fetchRemoteModels() {
+  const st = document.getElementById('pv-mc-status');
+  if (st) { st.style.display = ''; st.className = 'pm-status'; st.style.color = 'var(--text2)'; st.textContent = '拉取中…'; }
+  try {
+    const base = (PROVIDER.baseUrl || '').replace(/\/+$/, '');
+    const res = await fetch(base + '/models', { headers: { 'Authorization': 'Bearer ' + PROVIDER.apiKey } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const ids = (data?.data || []).map(m => m.id).filter(Boolean);
+    if (!ids.length) throw new Error('远端列表为空');
+    const customs = modelList.filter(m => m.custom && !ids.includes(m.id));
+    modelList = ids.map(id => {
+      const old = modelList.find(m => m.id === id);
+      return old ? Object.assign(old, { custom: false }) : { id, name: id, ctx: null, think: true, custom: false };
+    }).concat(customs);
+    if (!modelList.some(m => m.id === currentModel)) currentModel = modelList[0]?.id || '';
+    persistModels(); syncLLMConfig(); renderModelCards();
+    if (st) { st.className = 'pm-status ok'; st.textContent = `成功，拉取到 ${ids.length} 个模型`; }
+    showToast('拉取成功');
+  } catch (e) {
+    if (st) { st.className = 'pm-status err'; st.textContent = '拉取失败：' + String(e.message || e).slice(0, 40); }
+    showToast('拉取失败');
+  }
+}
+
+function openAddModel(editId) {
+  addmEditId = editId || null;
+  const m = editId ? modelList.find(x => x.id === editId) : null;
+  document.querySelector('#addm-sheet .sheet-title').textContent = m ? '编辑模型' : '添加模型';
+  document.getElementById('addm-name').value = m ? (m.name || '') : '';
+  document.getElementById('addm-id').value = m ? m.id : '';
+  document.getElementById('addm-ctx').value = m && m.ctx ? m.ctx : '';
+  const tk = document.getElementById('addm-think');
+  tk.classList.toggle('on', !!(m && m.think));
+  document.getElementById('addm-think-sub').textContent = m ? (m.think ? '支持' : '不支持') : '自动：不支持或未知';
+  const save = document.getElementById('addm-save');
+  save.style.opacity = m ? '1' : '0.45';
+  save.style.pointerEvents = m ? '' : 'none';
+  document.getElementById('addm-overlay').classList.add('open');
+  document.getElementById('addm-sheet').classList.add('open');
+}
+function closeAddModel() {
+  document.getElementById('addm-overlay').classList.remove('open');
+  document.getElementById('addm-sheet').classList.remove('open');
+  addmEditId = null;
+}
+function saveAddModel() {
+  const id = document.getElementById('addm-id').value.trim();
+  if (!id) return;
+  const name = document.getElementById('addm-name').value.trim() || id;
+  const ctxRaw = document.getElementById('addm-ctx').value.trim();
+  const ctx = ctxRaw ? parseInt(ctxRaw, 10) : null;
+  const think = document.getElementById('addm-think').classList.contains('on');
+  const ex = modelList.find(m => m.id === id);
+  if (addmEditId && addmEditId !== id) modelList = modelList.filter(m => m.id !== addmEditId);
+  if (ex) Object.assign(ex, { name, ctx, think });
+  else modelList.push({ id, name, ctx, think, custom: true });
+  currentModel = id; // 保存后切为当前模型
+  persistModels(); syncLLMConfig(); renderModelCards();
+  closeAddModel();
+  showToast(ex ? '模型已更新' : '模型已添加');
+}
+
 // 每个消息容器的对话历史（多轮上下文）
 const conversations = {};
 
@@ -1942,28 +2256,48 @@ function getHistory(containerId) {
 }
 
 async function callLLM(containerId) {
+  syncLLMConfig();
   // 归一化：删除消息可能导致 assistant 开头，截到首条 user 以兼容严格 API
   const hist = getHistory(containerId);
   const firstUser = hist.findIndex(m => m.role === 'user');
   const messages = firstUser > 0 ? hist.slice(firstUser) : hist;
-  const res = await fetch(LLM_CONFIG.url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + LLM_CONFIG.key
-    },
-    body: JSON.stringify({
-      model: LLM_CONFIG.model,
-      messages,
-      stream: false
-    })
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} ${errText.slice(0, 120)}`);
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + LLM_CONFIG.key
+  };
+  (LLM_CONFIG.extraHeaders || []).forEach(h => { headers[h.k] = h.v; });
+
+  let content = '';
+  if (LLM_CONFIG.endpoint === 'responses') {
+    // Responses API 格式
+    const input = messages.map(m => ({
+      role: m.role,
+      content: [{ type: m.role === 'assistant' ? 'output_text' : 'input_text', text: m.content }]
+    }));
+    const res = await fetch(LLM_CONFIG.url, {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: LLM_CONFIG.model, input, stream: false })
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${errText.slice(0, 120)}`);
+    }
+    const data = await res.json();
+    content = data?.output_text ||
+      (data?.output || []).flatMap(o => o.content || []).filter(c => c.type === 'output_text').map(c => c.text).join('');
+  } else {
+    // Chat Completions API 格式
+    const res = await fetch(LLM_CONFIG.url, {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: LLM_CONFIG.model, messages, stream: false })
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${errText.slice(0, 120)}`);
+    }
+    const data = await res.json();
+    content = data?.choices?.[0]?.message?.content;
   }
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('模型返回为空');
   return content;
 }
@@ -2220,14 +2554,116 @@ const detailContents = {
       </div>
     </div>
     <div class="sd-section-title">已配置提供商（共 1 个）</div>
-    <div class="pv-item selected" onclick="selectPvItem(this)">
+    <div class="pv-item selected" onclick="openDetail('providerDetail')">
       <div class="pv-icon" style="background:transparent;padding:0">${icBuiltin}</div>
       <div class="pv-info">
-        <div class="pv-name">内置服务</div>
-        <div class="pv-url">https://xiaomi78.top/v1</div>
-        <div class="pv-meta">OpenAI-compatible · 1 个模型 · 内置</div>
+        <div class="pv-name">${PROVIDER.name}</div>
+        <div class="pv-url">${PROVIDER.baseUrl}</div>
+        <div class="pv-meta">OpenAI-compatible · ${modelList.length} 个模型 · 内置</div>
       </div>
       <div class="pv-radio"></div>
+    </div>`,
+
+  providerDetail: () => `
+    <div class="pv-tabs">
+      <div class="pv-tab active" id="pvtab-cfg" onclick="pvSwitchTab('cfg')">配置</div>
+      <div class="pv-tab" id="pvtab-models" onclick="pvSwitchTab('models')">模型</div>
+    </div>
+    <div id="pv-pane-cfg">
+      <div class="sd-section-title">连接配置</div>
+      <div class="pcf-group">
+        <div class="pcf-field">
+          <div class="pcf-label">名称</div>
+          <input class="pcf-input" id="pv-cfg-name" value="${PROVIDER.name}"/>
+        </div>
+        <div class="pcf-field">
+          <div class="pcf-label">Base URL</div>
+          <input class="pcf-input" id="pv-cfg-url" value="${PROVIDER.baseUrl}"/>
+        </div>
+        <div class="pcf-field" style="position:relative">
+          <div class="pcf-label">API key</div>
+          <input class="pcf-input" id="pv-cfg-key" type="password" value="${PROVIDER.apiKey}" style="padding-right:36px"/>
+          <div class="pcf-eye" onclick="togglePwd('pv-cfg-key')">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="sd-card" style="margin-top:10px">
+        <div class="dd-row" style="position:relative">
+          <div class="dd-info">
+            <div class="dd-title">Endpoint 模式</div>
+            <div class="dd-sub" id="pv-ep-sub">使用 ${PROVIDER.endpoint === 'responses' ? 'Responses API' : 'Chat Completions API'}</div>
+          </div>
+          <div class="dd-stepper" onclick="event.stopPropagation(); toggleEpMenu()">
+            <span class="dd-val" id="pv-ep-val">${PROVIDER.endpoint === 'responses' ? 'Responses API' : 'Chat Completions API'}</span>
+            <div class="dd-step-arrows">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round"><path d="M6 15l6-6 6 6"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="ep-menu" id="ep-menu">
+            <div class="ep-item ${PROVIDER.endpoint !== 'responses' ? 'sel' : ''}" data-v="chat" onclick="pickEndpoint('chat')">Chat Completions API <span class="ep-check">✓</span></div>
+            <div class="ep-item ${PROVIDER.endpoint === 'responses' ? 'sel' : ''}" data-v="responses" onclick="pickEndpoint('responses')">Responses API <span class="ep-check">✓</span></div>
+          </div>
+        </div>
+        <div class="sd-test-row" onclick="testProviderConn(this)">测试连接</div>
+      </div>
+      <div class="sd-section-title" style="margin-top:20px">自定义请求头</div>
+      <div class="sd-card" style="padding:14px 16px">
+        <div class="dd-row" onclick="toggleHdrBox()">
+          <div class="dd-info">
+            <div class="dd-title" id="pv-hdr-title">${PROVIDER.headers.length ? '已设置 ' + PROVIDER.headers.length + ' 条' : '未设置'}</div>
+            <div class="dd-sub">可覆盖 User-Agent；认证与传输请求头由系统管理。</div>
+          </div>
+          <div class="dd-arrow" id="pv-hdr-arrow" style="transition:transform 0.2s">${icChevron}</div>
+        </div>
+        <div id="pv-hdr-box" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:6px">
+          <div id="pv-hdr-list"></div>
+          <div class="addhdr-btn" onclick="addHdrRow()">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            添加请求头
+          </div>
+        </div>
+      </div>
+      <div class="sd-section-title">偏好与策略</div>
+      <div class="tg-row">
+        <div class="tg-info"><div class="tg-title">启用此 Provider</div></div>
+        <div class="toggle ${PROVIDER.enabled ? 'on' : ''}" id="pv-cfg-enabled" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <button class="btn-primary-block" style="margin-top:16px" onclick="saveProviderCfg()">保存配置</button>
+      <div class="btn-danger-block" onclick="resetProviderCfg()">重置内置配置</div>
+    </div>
+    <div id="pv-pane-models" style="display:none">
+      <div class="sd-section-title">模型管理</div>
+      <div class="sd-card" style="padding:4px 16px">
+        <div class="pm-card" onclick="fetchRemoteModels()">
+          <div class="pm-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round"><path d="M4 14.9A7 7 0 1115.7 8h1.8a4.5 4.5 0 012.5 8.2"/><path d="M12 12v9"/><path d="M16 16l-4-4-4 4"/></svg>
+          </div>
+          <div class="pm-info">
+            <div class="pm-title">从远端自动拉取</div>
+            <div class="pm-sub">读取 ${PROVIDER.baseUrl} 的 /models 列表</div>
+          </div>
+          <div class="ar-arrow">${icArrow}</div>
+        </div>
+        <div class="pm-card" onclick="openAddModel()">
+          <div class="pm-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <div class="pm-info">
+            <div class="pm-title">添加自定义模型</div>
+            <div class="pm-sub">手动填写展示名称与 Model ID</div>
+          </div>
+          <div class="ar-arrow">${icArrow}</div>
+        </div>
+        <div class="pm-status" id="pv-mc-status" style="${PROVIDER.fetchMsg ? '' : 'display:none'}; ${PROVIDER.fetchOk ? 'color:#34a853' : 'color:#e02020'}">${PROVIDER.fetchMsg || ''}</div>
+      </div>
+      <div class="sd-search" style="margin-top:14px">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M17 17l4 4"/></svg>
+        <input type="text" placeholder="搜索模型" oninput="renderModelCards()"/>
+      </div>
+      <div class="sd-section-title" id="pv-mc-count">模型列表（共 ${modelList.length} 个）</div>
+      <div id="pv-mc-list"></div>
     </div>`,
 
   newProviderOpenAI: () => `
@@ -2388,10 +2824,15 @@ function openDetail(type) {
   const saveBar = document.getElementById('sd-save-bar');
   const action = document.getElementById('sd-action');
 
-  const titles = { account:'星屿账户', provider:'模型提供商', newProviderOpenAI:'新建提供商', newProviderAnthropic:'新建提供商', thinking:'思考设置', systemPrompt:'系统提示词', memory:'记忆', mcp:'' };
+  const titles = { account:'星屿账户', provider:'模型提供商', providerDetail:'内置服务', newProviderOpenAI:'新建提供商', newProviderAnthropic:'新建提供商', thinking:'思考设置', systemPrompt:'系统提示词', memory:'记忆', mcp:'' };
   title.textContent = titles[type] !== undefined ? titles[type] : type;
   body.innerHTML = detailContents[type] ? detailContents[type]() : '';
   if (type === 'account') applyAccountName(localStorage.getItem('xingyu-account') || '星屿测试');
+  if (type === 'providerDetail') {
+    hdrDraft = PROVIDER.headers.map(h => ({ k: h.k, v: h.v }));
+    syncLLMConfig();
+    renderModelCards();
+  }
 
   // Show save bar only for editable items
   saveBar.style.display = ['thinking'].includes(type) ? 'flex' : 'none';
@@ -2406,10 +2847,19 @@ function onSdAction() {
   alert('添加服务器');
 }
 
-function selectPvItem(el) {
-  document.querySelectorAll('.pv-item').forEach(o => o.classList.remove('selected'));
-  el.classList.add('selected');
-}
+// 添加/编辑模型弹窗：Model ID 有值时激活保存按钮
+document.addEventListener('DOMContentLoaded', () => {
+  const idInput = document.getElementById('addm-id');
+  if (idInput) {
+    idInput.addEventListener('input', () => {
+      if (addmEditId) return; // 编辑模式始终可保存
+      const save = document.getElementById('addm-save');
+      const ok = !!idInput.value.trim();
+      save.style.opacity = ok ? '1' : '0.45';
+      save.style.pointerEvents = ok ? '' : 'none';
+    });
+  }
+});
 
 function toggleEndpointMode() {
   const val = document.getElementById('np-ep-val');
@@ -2517,6 +2967,8 @@ function toggleTheme() {
 })();
 
 // ========== 账号注册 ==========
+// 启动时同步提供商配置到聊天请求
+syncLLMConfig();
 // 每台新设备首次打开自动向本地服务器登记，分配账号：星屿测试1、星屿测试2 …
 function applyAccountName(name) {
   const h = document.getElementById('home-acct-name');
