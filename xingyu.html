@@ -4015,8 +4015,6 @@ html, body {
   __GLOBAL__.NovelRule = NR;
   if (typeof module !== "undefined" && module.exports) module.exports = NR; // 便于 node 冒烟
 })();
-
-
 </script>
 <script>
 /* =====================================================================
@@ -8420,6 +8418,37 @@ async function aiInspireOutline(analysis, n, onProgress) {
     return false;
   }
 
+  /* ---------- 跨章防雷同质检 ---------- */
+  // 章节开头常见切入词（时间/场景切换类），相邻章用同一切入词即判雷同
+  var OPEN_ECHO_WORDS = ["次日", "翌日", "第二天", "三天后", "三日后", "清晨", "早上", "天亮", "正午", "中午", "下午", "傍晚", "黄昏", "夜里", "夜晚", "深夜", "当晚", "凌晨", "转眼", "不久", "与此同时", "这一日", "这一夜"];
+  function _normHead(s, n) {
+    return String(s || "").replace(/[（）()\s，。！？、：；“”‘’—…·,.!?'"]/g, "").slice(0, n || 20);
+  }
+  // 本章开头与上一章开头撞车：公共前缀 ≥6 字，或开头 12 字内命中同一切入词
+  function openingEcho(body, prevHead) {
+    var a = _normHead(body, 20), b = _normHead(prevHead, 20);
+    if (!a || !b) return false;
+    var p = 0;
+    while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    if (p >= 6) return true;
+    var ah = a.slice(0, 12), bh = b.slice(0, 12);
+    for (var i = 0; i < OPEN_ECHO_WORDS.length; i++) {
+      var w = OPEN_ECHO_WORDS[i];
+      if (ah.indexOf(w) >= 0 && bh.indexOf(w) >= 0) return true;
+    }
+    return false;
+  }
+  // 本章结尾与上一章结尾撞车：结尾 30 字内存在 ≥10 字公共子串
+  function tailEcho(body, prevTail) {
+    var a = _normHead(String(body || "").slice(-40), 30);
+    var b = _normHead(String(prevTail || "").slice(-40), 30);
+    if (a.length < 10 || b.length < 10) return false;
+    for (var i = 0; i + 10 <= b.length; i++) {
+      if (a.indexOf(b.slice(i, i + 10)) >= 0) return true;
+    }
+    return false;
+  }
+
   function protagonistPresent(body, outline) {
     var chars = (outline && outline.characters) || [];
     if (!chars.length) return true;
@@ -8522,6 +8551,8 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var urbanBlock = urbanBlockFor(outline, tags);
     var expandHint = !!ctx.expandHint;
     var hookHint = String(ctx.hookHint || "");
+    var prevHead = String(ctx.prevHead || "");
+    var antiEcho = !!ctx.antiEcho;
     var isFollow = !!originalBody;
     var isFinal = String(ch.hook || "") === "（全书完）";
     var sys, user;
@@ -8604,6 +8635,9 @@ async function aiInspireOutline(analysis, n, onProgress) {
         rhythmGuide(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
         chapterSpecText(ch) + "\n" +
         (prevTail ? "【上一章结尾】" + String(prevTail).slice(-350) + "\n（注意衔接）\n" : "") +
+        (prevHead ? "【防雷同·硬要求】上一章开头：「" + _normHead(prevHead, 24) + "…」——本章开头必须换一种切入方式，禁止同句式、同时间词、同动作开场；" +
+          "上一章结尾画面：「" + _normHead(String(prevTail).slice(-40), 24) + "…」——本章结尾禁止停在相同画面或相同动作上。\n" : "") +
+        (antiEcho ? "\n【重要·防雷同重写】你上一稿的开头/结尾与上一章雷同，本次必须彻底更换开头切入句式与结尾画面，禁止重复上一章的开场时间词与收尾动作。\n" : "") +
         (expandHint ? "\n【重要】上一稿字数严重不足，本次必须大幅扩写：增加对话往来、场景细节、心理描写、动作分解，确保中文字符数不少于 " + MIN_CHAPTER_CHARS + " 字。\n" : "") +
         (hookHint ? "\n【重要·章末钩子】上一稿没有停在指定钩子上。本章最后一句必须落在这个画面上：" + hookHint + "\n请把结尾改写为正好停在该钩子处，不要多写后续情节。\n" : "") +
         emotionAnchorBlock(ch) +
@@ -8788,6 +8822,96 @@ async function aiInspireOutline(analysis, n, onProgress) {
     }
     var charLine = names.length ? ("\n【本书主要人物（必须使用这些名字，不得改名或换人）】" + names.join("、")) : "";
     return (text + charLine).slice(0, limit);
+  }
+
+  // 因果链检查：本章 plot 是否回应了上一章的 conflict/hook
+  function causalChainCheck(prevCh, currentCh) {
+    if (!prevCh || !currentCh) return { ok: true };
+    var prevConflict = String(prevCh.conflict || "").trim();
+    var prevHook = String(prevCh.hook || "").trim();
+    var currentPlot = String(currentCh.plot || "").trim();
+    if (!prevConflict && !prevHook) return { ok: true };
+    if (!currentPlot) return { ok: false, reason: "本章剧情为空，无法承接上一章" };
+
+    // 提取关键词进行匹配
+    function extractKeywords(text) {
+      var words = [];
+      var clean = String(text).replace(/[，。！？、：；""''（）\s]/g, "");
+      for (var i = 0; i < clean.length - 1; i++) {
+        words.push(clean.slice(i, i + 2));
+      }
+      return words;
+    }
+
+    var prevWords = extractKeywords(prevConflict + prevHook);
+    var currentWords = extractKeywords(currentPlot);
+    var matchCount = 0;
+    for (var i = 0; i < prevWords.length; i++) {
+      if (currentWords.indexOf(prevWords[i]) >= 0) matchCount++;
+    }
+
+    // 如果匹配率低于 10%，认为因果链断裂
+    var matchRate = prevWords.length ? matchCount / prevWords.length : 1;
+    if (matchRate < 0.1) {
+      return { ok: false, reason: "本章剧情与上一章冲突/钩子关联度过低（" + Math.round(matchRate * 100) + "%），可能因果链断裂" };
+    }
+    return { ok: true, matchRate: matchRate };
+  }
+
+  // 实力合理性检查：战斗结果是否符合实力设定
+  function powerLevelCheck(body, state) {
+    if (!state || !state.characters) return { ok: true };
+    var text = String(body || "");
+
+    // 提取战斗结果关键词
+    var winKeywords = ["击败", "打败", "战胜", "击退", "斩杀", "击杀", "获胜", "胜出", "赢", "胜"];
+    var loseKeywords = ["被击败", "被打败", "战败", "败北", "落败", "输", "不敌", "溃败"];
+
+    // 检查是否有战斗场景
+    var hasBattle = false;
+    for (var i = 0; i < winKeywords.length; i++) {
+      if (text.indexOf(winKeywords[i]) >= 0) { hasBattle = true; break; }
+    }
+    if (!hasBattle) {
+      for (var j = 0; j < loseKeywords.length; j++) {
+        if (text.indexOf(loseKeywords[j]) >= 0) { hasBattle = true; break; }
+      }
+    }
+    if (!hasBattle) return { ok: true };
+
+    // 提取主要人物的实力等级
+    var chars = state.characters || {};
+    var powerLevels = {};
+    for (var name in chars) {
+      if (!Object.prototype.hasOwnProperty.call(chars, name)) continue;
+      var info = chars[name];
+      if (!info || typeof info !== "object") continue;
+      var power = String(info.power || "");
+      // 提取数字等级（如"炼气三层"→3）
+      var match = power.match(/(\d+)/);
+      if (match) powerLevels[name] = parseInt(match[1], 10);
+    }
+
+    // 如果只有一个人物有实力等级，无法对比
+    var names = Object.keys(powerLevels);
+    if (names.length < 2) return { ok: true };
+
+    // 检查是否有越级战斗（低等级打赢高等级）
+    for (var k = 0; k < names.length; k++) {
+      for (var l = k + 1; l < names.length; l++) {
+        var n1 = names[k], n2 = names[l];
+        var p1 = powerLevels[n1], p2 = powerLevels[n2];
+        // 检查文本中是否有 n1 打赢 n2 且 p1 < p2 的情况
+        if (p1 < p2 - 2) { // 等级差超过 2 级
+          var winPattern = n1 + ".*(" + winKeywords.join("|") + ").*" + n2;
+          var regex = new RegExp(winPattern);
+          if (regex.test(text)) {
+            return { ok: false, reason: "实力不合理：" + n1 + "（" + p1 + "级）击败" + n2 + "（" + p2 + "级），等级差 " + (p2 - p1) + " 级，需要合理解释（如偷袭/法宝/对方受伤）" };
+          }
+        }
+      }
+    }
+    return { ok: true };
   }
 
   /* ---------- 质检润色（creator.polish_chapter 移植） ---------- */
@@ -9043,6 +9167,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
     var novelState = { characters: {}, foreshadows: [], revealed: [], open_questions: [] };
     var results = [];
     var prevTail = "";
+    var prevHead = "";
     var hardFloor = Math.floor(MIN_CHAPTER_CHARS * HARD_FLOOR_RATIO);
     var aiFailures = 0;
     for (var i = 0; i < chapters.length; i++) {
@@ -9066,6 +9191,13 @@ async function aiInspireOutline(analysis, n, onProgress) {
       }
       var context = buildContext(contextNotes, outline, 1600);
       var stateBlock = formatState(novelState, idx1);
+      // 因果链检查：本章是否回应了上一章的冲突/钩子
+      if (i > 0 && chapters[i - 1]) {
+        var causalCheck = causalChainCheck(chapters[i - 1], ch);
+        if (!causalCheck.ok) {
+          stateBlock = (stateBlock ? (stateBlock + "\n\n") : "") + "【因果链警告】" + causalCheck.reason + "。本章剧情必须回应上一章的冲突/钩子，建立清晰的因果递进关系。";
+        }
+      }
       // 结局临近伏笔清仓：最后 2 章强制列出所有未回收伏笔（formatState 仅提示 8 章前的，结局前必须全量提醒）
       var chaptersLeft = chapters.length - idx1;
       if (chaptersLeft <= 1 && novelState.foreshadows && novelState.foreshadows.length) {
@@ -9084,19 +9216,32 @@ async function aiInspireOutline(analysis, n, onProgress) {
       var hook = String(ch.hook || "");
       var body = null;
       if (hasAI) {
-        var needExpand = false, needHook = false;
+        var needExpand = false, needHook = false, needAntiEcho = false;
         for (var attempt = 0; attempt < 3; attempt++) {
           try {
             body = await aiWriteChapter(outline, ch, analysis, prevTail, orig, {
               stylePrompt: opts.stylePrompt, temperature: opts.temperature,
               maxTokens: opts.maxTokens, model: opts.model,
               context: context, stateBlock: stateBlock,
-              expandHint: needExpand, hookHint: needHook ? hook : ""
+              expandHint: needExpand, hookHint: needHook ? hook : "",
+              prevHead: prevHead, antiEcho: needAntiEcho
             });
             if (cnChars(body) < hardFloor) { needExpand = true; body = null; continue; }
             if (!hookLanded(body, hook)) { needHook = true; body = null; continue; }
+            // 实力合理性检查
+            var powerCheck = powerLevelCheck(body, novelState);
+            if (!powerCheck.ok) {
+              needExpand = true;
+              body = null;
+              // 在下一次 attempt 的 prompt 中注入实力合理性要求
+              stateBlock = (stateBlock ? (stateBlock + "\n\n") : "") + "【实力合理性警告】" + powerCheck.reason;
+              continue;
+            }
+            // 跨章防雷同质检（仅非仿写路径；仿写需贴近原作，不适用）
+            if (!isFollow && prevHead && openingEcho(body, prevHead)) { needAntiEcho = true; body = null; continue; }
+            if (!isFollow && prevTail && tailEcho(body, prevTail)) { needAntiEcho = true; body = null; continue; }
             break;
-          } catch (e) { body = null; }
+          } catch (e) { body = null; try { console.error("[dbg-catch] ch" + idx1 + " attempt" + attempt + ": " + ((e && e.stack) || e)); } catch (_e) {} }
         }
       }
       if (body == null || cnChars(body) < hardFloor) {
@@ -9117,6 +9262,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
         } catch (e) { /* 外层兜底，理论上不会走到这里 */ }
         if (polishedBody) body = polishedBody;
         prevTail = String(body).slice(-350);
+        prevHead = String(body).slice(0, 60);
         if (stateUpd) mergeState(novelState, stateUpd);
       }
       body = String(body || "");
@@ -9202,7 +9348,6 @@ async function aiInspireOutline(analysis, n, onProgress) {
   G.NovelCreator = NC;
   if (typeof module !== "undefined" && module.exports) module.exports = NC;
 })();
-
 </script>
 <script>
 // ========== STATE ==========
