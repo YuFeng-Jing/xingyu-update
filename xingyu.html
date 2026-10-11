@@ -4015,6 +4015,8 @@ html, body {
   __GLOBAL__.NovelRule = NR;
   if (typeof module !== "undefined" && module.exports) module.exports = NR; // 便于 node 冒烟
 })();
+
+
 </script>
 <script>
 /* =====================================================================
@@ -9230,7 +9232,12 @@ async function aiInspireOutline(analysis, n, onProgress) {
     function pmsg(msg) { onProgress("大纲", 0, total, msg); }
     function hasChs(o) { return o && o.chapters && o.chapters.length; }
     var outline = null, usedAI = false;
-    if (isInspire) {
+    // 断点续传（v20）：resumeState 携带完整内部状态（大纲/进度/人物伏笔状态/上下文），跳过大纲生成直接续写
+    var resume = (opts.resumeState && typeof opts.resumeState === "object" && hasChs(opts.resumeState.outline)) ? opts.resumeState : null;
+    if (resume) {
+      outline = resume.outline;
+      usedAI = !!resume.usedAI;
+    } else if (isInspire) {
       if (hasAI) {
         try {
           if (String(opts.inspirePrompt || "").trim()) {
@@ -9295,15 +9302,38 @@ async function aiInspireOutline(analysis, n, onProgress) {
     onProgress("大纲", 1, total, "大纲就绪（" + chapters.length + " 章）");
 
     // 3. 逐章写作（3 次 attempt：字数硬门槛 → 钩子落地；失败回退本地细纲）
-    var contextNotes = [];
-    var novelState = { characters: {}, foreshadows: [], revealed: [], open_questions: [] };
-    var results = [];
-    var prevTail = "";
-    var prevHead = "";
-    var prevHook = "";
+    var contextNotes = (resume && resume.contextNotes) || [];
+    var novelState = (resume && resume.novelState && typeof resume.novelState === "object") ? resume.novelState : { characters: {}, foreshadows: [], revealed: [], open_questions: [] };
+    var results = (resume && resume.results) || [];
+    var prevTail = String((resume && resume.prevTail) || "");
+    var prevHead = String((resume && resume.prevHead) || "");
+    var prevHook = String((resume && resume.prevHook) || "");
+    var startIdx = resume ? Math.max(0, Math.min(safeInt(resume.nextIdx, 0), chapters.length)) : 0;
     var hardFloor = Math.floor(MIN_CHAPTER_CHARS * HARD_FLOOR_RATIO);
     var aiFailures = 0;
-    for (var i = 0; i < chapters.length; i++) {
+    // 捕获引擎内部完整状态，供工作台存档/断点恢复（v20）
+    function captureResume(nextI) {
+      return {
+        v: 1, storySource: storySource, outline: outline, contextNotes: contextNotes,
+        novelState: novelState, results: results, prevTail: prevTail, prevHead: prevHead,
+        prevHook: prevHook, nextIdx: nextI, usedAI: usedAI
+      };
+    }
+    for (var i = startIdx; i < chapters.length; i++) {
+      // 暂停检测（章粒度）：工作台按下暂停后，当前章写完、下一章开始前生效
+      if (typeof opts.shouldPause === "function" && opts.shouldPause()) {
+        onProgress("暂停", i, total, "已暂停，进度已自动保存");
+        return {
+          kind: storySource, paused: true,
+          title: String(outline.title || "未命名").trim() || "未命名",
+          synopsis: String(outline.synopsis || ""),
+          report: "", chapters: results,
+          info: "已暂停（完成 " + results.length + " 章），可从历史记录继续生成",
+          _outline: outline, _analysis: analysis,
+          _origBodies: isFollow ? srcChs.map(function (c) { return c.body; }) : null,
+          _resumeState: captureResume(i)
+        };
+      }
       var idx1 = i + 1;
       var ch = chapters[i];
       if (!ch || typeof ch !== "object") ch = { no: idx1, title: "第" + idx1 + "章", plot: "", conflict: "", hook: "" };
@@ -9411,6 +9441,8 @@ async function aiInspireOutline(analysis, n, onProgress) {
       results.push({ title: dispTitle, body: body, words: cnChars(body) });
       var note = chapterSummaryNote(dispTitle, body, 160);
       if (note) contextNotes.push("第" + idx1 + "章：" + note);
+      // 每章完成回调（v20）：工作台借此自动存档断点（必须在 results.push 之后，否则漏存本章）
+      if (typeof opts.onChapterDone === "function") { try { opts.onChapterDone(captureResume(i + 1), results.length); } catch (e) {} }
     }
     onProgress("完成", total, total, "完成");
 
@@ -9490,6 +9522,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
   G.NovelCreator = NC;
   if (typeof module !== "undefined" && module.exports) module.exports = NC;
 })();
+
 </script>
 <script>
 // ========== STATE ==========
@@ -9547,6 +9580,7 @@ function startChat(mode) {
 // ========== SPLASH ==========
 window.addEventListener('load', () => {
   loadConversations();
+  nvLoadSessions();
   setTimeout(() => {
     document.getElementById('splash').classList.add('hide');
   }, 2200);
@@ -9619,6 +9653,18 @@ function renderHistory(filter = '') {
       </div>`;
     });
   });
+  // 生成小说历史（v20）：对话历史下方独立分区，点击进入断点续写
+  const nvItems = nvSessions.filter(s => !f || String(s.title || '').toLowerCase().includes(f));
+  if (nvItems.length) {
+    html += `<div class="drawer-group-label" style="margin-top:14px">生成小说 <span class="count">${nvItems.length}</span></div>`;
+    nvItems.forEach(s => {
+      const st = s.done ? '已完成' : `已暂停 ${(s.chapters || []).length}/${s.totalChapters || '?'} 章`;
+      html += `<div class="history-item" onclick="nvOpenSession('${s.id}')">
+        <div class="h-title">📖 ${String(s.title || '未命名').replace(/</g, '&lt;')}</div>
+        <div class="h-meta">${fmt(s.updated || s.time)} · ${st}</div>
+      </div>`;
+    });
+  }
   list.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text3)">暂无记录</div>';
 }
 function filterHistory(val) { renderHistory(val); }
@@ -10843,17 +10889,48 @@ function nvSaveLearned(rules) {
   try { localStorage.setItem('xy_novel_learned', JSON.stringify(rules || {})); } catch (e) {}
 }
 
-const nvState = { tab: 0, sources: [], analysis: null, result: null, running: false, analyzing: false };
+// ---- 生成会话存档（v20）：每章完成自动保存；暂停/退出后可从对话历史抽屉断点续写 ----
+const NV_SESSIONS_KEY = 'xy_novel_sessions';
+let nvSessions = [];
+function nvLoadSessions() {
+  try { const r = localStorage.getItem(NV_SESSIONS_KEY); if (r) nvSessions = JSON.parse(r) || []; } catch (e) { nvSessions = []; }
+  if (!Array.isArray(nvSessions)) nvSessions = [];
+}
+function nvPersistSessions() {
+  try { localStorage.setItem(NV_SESSIONS_KEY, JSON.stringify(nvSessions.slice(0, 20))); }
+  catch (e) { // 容量满：裁到 5 条重试
+    try { nvSessions = nvSessions.slice(0, 5); localStorage.setItem(NV_SESSIONS_KEY, JSON.stringify(nvSessions)); } catch (e2) {}
+  }
+}
+function nvSaveSession(patch) {
+  const now = Date.now();
+  let s = nvSessions.find(x => x.id === patch.id);
+  if (!s) { s = { id: patch.id || (now + '_' + Math.random().toString(36).slice(2, 7)), time: now }; nvSessions.unshift(s); }
+  Object.assign(s, patch, { id: s.id, time: s.time, updated: now });
+  nvPersistSessions();
+  return s.id;
+}
+
+const nvState = { tab: 0, sources: [], analysis: null, result: null, running: false, analyzing: false, pausing: false, sessionId: null, resumeState: null };
 
 // ---- 引擎状态与导航 ----
-function openNovel() { navigate('novel'); nvState.tab = 0; nvRender(); }
+function openNovel() { navigate('novel'); nvState.tab = 0; nvState.sessionId = null; nvState.resumeState = null; nvRender(); } // 主页卡片进入=全新创作；续写走历史记录
 function nvTab(i) {
-  if (nvState.running && i !== 2) { showToast('创作进行中，请等待完成'); return; }
+  if (nvState.running && i !== 2) { showToast('创作进行中，可先点击暂停'); return; }
   nvState.tab = i; nvRender();
+}
+function nvRunBtnText() {
+  if (nvState.running) return nvState.pausing ? '暂停中…（写完本章停止）' : '生成中… 点击暂停';
+  if (nvState.resumeState) {
+    const tot = ((nvState.resumeState.outline || {}).chapters || []).length;
+    const doneN = nvState.resumeState.nextIdx || 0;
+    return `继续生成（${doneN}/${tot} 章）`;
+  }
+  return nvLoadCfg().aiMode ? '开始 AI 写作' : '开始本地改写';
 }
 function nvSetRunning(r) {
   const b = document.getElementById('nv-run-btn');
-  if (b) { b.disabled = r; b.textContent = r ? '生成中…' : (nvLoadCfg().aiMode ? '开始 AI 写作' : '开始本地改写'); }
+  if (b) { b.disabled = false; b.textContent = nvRunBtnText(); } // 运行中不禁用：点击即暂停
 }
 
 // ---- LLM 适配器：默认跟随星屿内置服务，可关闭后自定义接口 ----
@@ -11098,7 +11175,7 @@ function nvSegPick(btn) {
   nvSaveCfg(cfg);
   seg.querySelectorAll('.nv-mode-item').forEach(it => it.classList.toggle('sel', it === btn));
   const b = document.getElementById('nv-run-btn');
-  if (b) b.textContent = nvState.running ? '生成中…' : (cfg.aiMode ? '开始 AI 写作' : '开始本地改写');
+  if (b) b.textContent = nvRunBtnText();
 }
 function nvRefreshAiCustom(root) {
   if (!root) return;
@@ -11155,7 +11232,7 @@ function nvOutputHTML() {
       ${nvSeg('', 'storySource', [{ v: 'new', t: '新作' }, { v: 'follow', t: '仿写' }, { v: 'inspire', t: '灵感原创' }])}` : ''}
     </div>
     ${cond}
-    <button class="nv-btn-primary" id="nv-run-btn" onclick="nvRun()">${nvState.running ? '生成中…' : (aiMode ? '开始 AI 写作' : '开始本地改写')}</button>
+    <button class="nv-btn-primary" id="nv-run-btn" onclick="nvRun()">${nvRunBtnText()}</button>
     <div class="nv-prog-bar" id="nv-prog-fill-wrap" style="margin-top:14px"><div class="nv-prog-fill" id="nv-prog-fill"></div></div>
     <div class="nv-prog-note" id="nv-prog-note"></div>`;
 }
@@ -11216,7 +11293,11 @@ function nvParseSyn(s) {
   return out;
 }
 async function nvRun() {
-  if (nvState.running) return;
+  // 运行中点击 = 请求暂停（章粒度：当前章写完后停止，进度自动保存）
+  if (nvState.running) {
+    if (!nvState.pausing) { nvState.pausing = true; nvSetRunning(true); showToast('已请求暂停，当前章写完后停止'); }
+    return;
+  }
   const cfg = nvLoadCfg();
   const aiMode = !!cfg.aiMode, ss = cfg.storySource;
   const inspireEl = document.getElementById('nv-inspire');
@@ -11224,9 +11305,15 @@ async function nvRun() {
   if (!aiMode && nvState.sources.length === 0) { showToast('本地改写需先在「导入」页添加文本'); nvTab(0); return; }
   if (aiMode && ss === 'follow' && !nvState.analysis) { showToast('AI 仿写需先识别原作'); nvTab(0); return; }
   if (ss === 'inspire' && !(cfg.inspirePrompt || '').trim() && aiMode) { showToast('请先填写灵感输入'); return; }
-  nvState.running = true; nvSetRunning(true);
+  nvState.running = true; nvState.pausing = false; nvSetRunning(true);
+  const resumeState = nvState.resumeState || null;
+  let sid = nvState.sessionId || null;
+  const saveSnap = (patch) => {
+    sid = nvSaveSession(Object.assign({ id: sid, cfg: cfg, sources: nvState.sources, analysis: nvState.analysis }, patch));
+    nvState.sessionId = sid;
+  };
   const note = document.getElementById('nv-prog-note');
-  if (note) note.textContent = '启动引擎…';
+  if (note) note.textContent = resumeState ? '从断点续写…' : '启动引擎…';
   try {
     if (!aiMode) {
       if (typeof NovelRule === 'undefined') throw new Error('规则引擎未加载');
@@ -11252,9 +11339,38 @@ async function nvRun() {
         storySource: ss, inspirePrompt: cfg.inspirePrompt || '',
         sourceText: nvState.sources.map(s => s.text).join('\n\n'),
         targetChapters: cfg.targetChapters, targetWords: cfg.targetWords,
-        stylePrompt: cfg.stylePrompt, temperature: cfg.temperature, maxTokens: cfg.maxTokens, model: cfg.model || undefined
+        stylePrompt: cfg.stylePrompt, temperature: cfg.temperature, maxTokens: cfg.maxTokens, model: cfg.model || undefined,
+        resumeState: resumeState || undefined,
+        shouldPause: () => nvState.pausing,
+        onChapterDone: (rs) => {
+          // 每章完成自动存档（含引擎断点状态）
+          saveSnap({
+            title: (rs.outline && rs.outline.title) || '未命名', kind: ss,
+            engineResume: JSON.parse(JSON.stringify(rs)), chapters: rs.results,
+            totalChapters: ((rs.outline || {}).chapters || []).length, done: false
+          });
+        }
       }, nvProgress);
       nvState.result = res;
+      if (res.paused) {
+        saveSnap({
+          title: res.title, kind: ss, engineResume: JSON.parse(JSON.stringify(res._resumeState)),
+          chapters: res.chapters, totalChapters: ((res._outline || {}).chapters || []).length,
+          done: false, synopsis: res.synopsis || ''
+        });
+        nvState.resumeState = res._resumeState;
+        nvProgressDone('已暂停，进度已保存（可退出，从对话历史继续）');
+        nvState.tab = 3; nvRender();
+        nvState.running = false; nvSetRunning(false);
+        return;
+      }
+      // 完成：会话标记完成，清断点
+      saveSnap({
+        title: res.title, kind: ss, chapters: res.chapters,
+        totalChapters: res.chapters.length, done: true,
+        synopsis: res.synopsis || '', report: res.report || '', engineResume: null
+      });
+      nvState.resumeState = null;
     }
     nvProgressDone('生成完成');
     nvState.tab = 3; nvRender();
@@ -11262,6 +11378,24 @@ async function nvRun() {
     nvProgressErr((e && e.message) ? e.message : String(e));
   }
   nvState.running = false; nvSetRunning(false);
+}
+// 从抽屉历史打开小说会话：恢复素材/配置/断点，未完成可断点续写（v20）
+function nvOpenSession(id) {
+  const s = nvSessions.find(x => x.id === id);
+  if (!s || nvState.running) return;
+  toggleDrawer(false);
+  if (s.cfg) nvSaveCfg(s.cfg);
+  nvState.sources = Array.isArray(s.sources) ? s.sources : [];
+  nvState.analysis = s.analysis || null;
+  nvState.sessionId = s.id;
+  nvState.resumeState = (!s.done && s.engineResume) ? JSON.parse(JSON.stringify(s.engineResume)) : null;
+  nvState.result = {
+    kind: s.kind || 'new', title: s.title || '未命名', synopsis: s.synopsis || '',
+    report: s.report || '', chapters: Array.isArray(s.chapters) ? s.chapters : []
+  };
+  navigate('novel');
+  nvState.tab = 3; nvRender();
+  showToast(s.done ? '已打开历史作品' : '已恢复断点，到「输出」页点击继续生成');
 }
 async function nvRewriteCh(idx) {
   if (nvState.running || !nvState.result) return;
@@ -11335,6 +11469,14 @@ function nvRender() {
 }
 
 // ========== THEME ==========
+// 黑夜模式同步系统状态栏（仅 APK 内有效，浏览器环境静默跳过）
+function xySyncStatusBar(theme) {
+  try {
+    if (window.XingyuBridge && typeof window.XingyuBridge.setDarkMode === 'function') {
+      window.XingyuBridge.setDarkMode(theme === 'dark');
+    }
+  } catch (e) {}
+}
 function toggleTheme() {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const next = isDark ? 'light' : 'dark';
@@ -11343,6 +11485,7 @@ function toggleTheme() {
   } else {
     document.documentElement.removeAttribute('data-theme');
   }
+  xySyncStatusBar(next);
   const t = document.getElementById('theme-toggle');
   if (t) t.classList.toggle('on', next === 'dark');
   const s = document.getElementById('theme-sub');
@@ -11354,6 +11497,7 @@ function toggleTheme() {
 (function initTheme() {
   document.documentElement.removeAttribute('data-theme');
   localStorage.removeItem('xingyu-theme');
+  xySyncStatusBar('light'); // 热更重载后若原生栏仍是深色，强制复位
 })();
 
 // ========== 账号注册 ==========
