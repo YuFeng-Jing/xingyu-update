@@ -302,6 +302,25 @@ html, body {
 .input-bar .model-indicator { transition: transform 0.22s var(--ease-spring); }
 .input-bar .model-indicator:active { transform: scale(0.88); }
 .input-bar .model-indicator svg { width: 14px; height: 14px; fill: #fff; }
+.input-bar .home-model-chip {
+  flex-shrink: 0;
+  max-width: 120px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent), #7b68ee);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 28px;
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: transform 0.22s var(--ease-spring);
+}
+.input-bar .home-model-chip:active { transform: scale(0.92); }
 .input-bar .send-btn {
   width: 32px; height: 32px;
   border-radius: 50%;
@@ -1551,6 +1570,7 @@ html, body {
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </div>
         <input type="text" id="home-input" placeholder="交给 星屿 去完成" onkeydown="if(event.key==='Enter') homeSend()"/>
+        <div class="home-model-chip" id="home-model-chip" onclick="openDetail('provider')">内置服务 / agnes-3.0-flash</div>
         <div class="model-indicator" onclick="toggleRateMenu(event)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" opacity="0.3"/><path d="M12 6v12M6 12h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
@@ -1582,6 +1602,7 @@ html, body {
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </div>
         <input type="text" id="chat-input" placeholder="输入消息..." onkeydown="if(event.key==='Enter') chatSend()"/>
+        <div class="home-model-chip" id="chat-model-chip" onclick="openDetail('provider')">内置服务 / agnes-3.0-flash</div>
         <div class="model-indicator" onclick="toggleRateMenu(event)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" opacity="0.3"/><path d="M12 6v12M6 12h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
@@ -9917,6 +9938,11 @@ function syncLLMConfig() {
   LLM_CONFIG.url = LLM_CONFIG.base + (PROVIDER.endpoint === 'responses' ? '/responses' : '/chat/completions');
   const sub = document.getElementById('prov-sub');
   if (sub) sub.textContent = PROVIDER.name + ' / ' + currentModel;
+  const hm = document.getElementById('home-model-chip');
+  const cm = document.getElementById('chat-model-chip');
+  const chipTxt = PROVIDER.name + ' / ' + currentModel;
+  if (hm) hm.textContent = chipTxt;
+  if (cm) cm.textContent = chipTxt;
 }
 
 function pvSwitchTab(which) {
