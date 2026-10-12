@@ -11073,9 +11073,9 @@ function nvImportHTML() {
     </div>
     <div class="nv-card">
       <div class="nv-label">从番茄小说下载</div>
-      <div style="font-size:12.5px;color:var(--text2);line-height:1.6;margin-bottom:10px">粘贴番茄小说书籍页面链接或纯数字ID，服务端自动下载章节正文并导入为来源。</div>
-      <input class="nv-input" id="nv-fq-input" placeholder="https://fanqienovel.com/page/… 或 7143038691944959011" style="width:100%;margin-bottom:8px"/>
-      <button class="nv-btn-primary" onclick="nvFqFetch()" id="nv-fq-btn">获取书籍信息</button>
+      <div style="font-size:12.5px;color:var(--text2);line-height:1.6;margin-bottom:10px">输入书名搜索，或粘帖番茄小说链接/ID，下载正文并导入为来源。</div>
+      <input class="nv-input" id="nv-fq-input" placeholder="输入书名搜索 / 粘贴链接或ID" style="width:100%;margin-bottom:8px"/>
+      <button class="nv-btn-primary" onclick="nvFqFetch()" id="nv-fq-btn">搜索</button>
       <div id="nv-fq-info"></div>
     </div>
     <div class="nv-card">
@@ -11125,11 +11125,44 @@ async function nvFqFetch() {
   const btn = document.getElementById('nv-fq-btn');
   const info = document.getElementById('nv-fq-info');
   const val = (inp && inp.value || '').trim();
-  if (!val) { showToast('请输入番茄小说链接或书籍ID'); return; }
-  btn.disabled = true; btn.textContent = '获取中…';
-  info.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">正在获取…</div>';
+  if (!val) { showToast('请输入书名、链接或ID'); return; }
+  // 纯数字ID 或 包含 /page/ 的链接 → 直接获取书籍信息
+  if (/^\d{6,}$/.test(val) || /\/page\//.test(val)) {
+    return nvFqLoadInfo(val);
+  }
+  // 否则按书名搜索
+  btn.disabled = true; btn.textContent = '搜索中…';
+  info.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">搜索中…</div>';
   try {
-    const r = await fetch(FQ_API_BASE + '/api/novel/info?url=' + encodeURIComponent(val));
+    const r = await fetch(FQ_API_BASE + '/api/novel/search?key=' + encodeURIComponent(val));
+    const d = await r.json();
+    if (!d.ok || !d.results || !d.results.length) {
+      info.innerHTML = '<div style="color:#ff3b30;font-size:13px;padding:4px 0">未找到相关书籍</div>';
+      return;
+    }
+    info.innerHTML = '<div style="font-size:12px;color:var(--text3);margin-bottom:6px">找到 ' + d.count + ' 条结果，点击选择：</div>' +
+      d.results.map(r => `
+        <div onclick="nvFqLoadInfo('${r.book_id}')" style="display:flex;gap:10px;padding:10px;margin:4px 0;background:var(--bg2);border-radius:10px;cursor:pointer;align-items:flex-start">
+          <div style="width:40px;height:40px;border-radius:6px;background:var(--bg3);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px">📖</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${String(r.title).replace(/</g,'&lt;')}</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${String(r.author).replace(/</g,'&lt;')}</div>
+            ${r.abstract ? `<div style="font-size:11px;color:var(--text3);line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${String(r.abstract).replace(/</g,'&lt;')}</div>` : ''}
+          </div>
+        </div>`).join('');
+  } catch (e) {
+    info.innerHTML = '<div style="color:#ff3b30;font-size:13px;padding:4px 0">网络错误：' + (e.message || e) + '</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = '搜索';
+  }
+}
+async function nvFqLoadInfo(idOrUrl) {
+  const info = document.getElementById('nv-fq-info');
+  const btn = document.getElementById('nv-fq-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '获取中…'; }
+  info.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">正在获取书籍信息…</div>';
+  try {
+    const r = await fetch(FQ_API_BASE + '/api/novel/info?url=' + encodeURIComponent(idOrUrl));
     const d = await r.json();
     if (!d.ok) { info.innerHTML = '<div style="color:#ff3b30;font-size:13px;padding:4px 0">失败：' + (d.error || '未知错误') + '</div>'; return; }
     nvState._fqBook = d;
@@ -11153,7 +11186,7 @@ async function nvFqFetch() {
   } catch (e) {
     info.innerHTML = '<div style="color:#ff3b30;font-size:13px;padding:4px 0">网络错误：' + (e.message || e) + '</div>';
   } finally {
-    btn.disabled = false; btn.textContent = '获取书籍信息';
+    if (btn) { btn.disabled = false; btn.textContent = '搜索'; }
   }
 }
 async function nvFqDownload() {
