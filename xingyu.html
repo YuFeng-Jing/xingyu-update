@@ -11588,7 +11588,7 @@ function registerAccount() {
   const device = getDeviceId();
   const cached = localStorage.getItem('xingyu-account');
   if (cached) applyAccountName(cached);
-  fetch('http://192.168.1.162:8770/api/register?device=' + encodeURIComponent(device))
+  fetch('https://demonstration-assumptions-chance-scripts.trycloudflare.com/api/register?device=' + encodeURIComponent(device))
     .then(r => r.json())
     .then(d => {
       if (d && d.ok && d.name) {
@@ -11613,7 +11613,7 @@ function doLogin() {
   btn.textContent = '登录中…';
   btn.disabled = true;
   const device = getDeviceId();
-  fetch('http://192.168.1.162:8770/api/login?name=' + encodeURIComponent(name) + '&password=' + encodeURIComponent(password) + '&device=' + encodeURIComponent(device))
+  fetch('https://demonstration-assumptions-chance-scripts.trycloudflare.com/api/login?name=' + encodeURIComponent(name) + '&password=' + encodeURIComponent(password) + '&device=' + encodeURIComponent(device))
     .then(r => r.json())
     .then(d => {
       btn.disabled = false;
@@ -11638,7 +11638,7 @@ function doLogin() {
 function saveNickname() {
   const v = document.getElementById('nick-input').value.trim();
   const device = getDeviceId();
-  fetch('http://192.168.1.162:8770/api/profile?device=' + encodeURIComponent(device) + '&nickname=' + encodeURIComponent(v))
+  fetch('https://demonstration-assumptions-chance-scripts.trycloudflare.com/api/profile?device=' + encodeURIComponent(device) + '&nickname=' + encodeURIComponent(v))
     .then(r => r.json())
     .then(d => {
       if (d && d.ok) {
@@ -11657,7 +11657,7 @@ function savePassword() {
   if (!v) { alert('请输入新密码'); return; }
   if (v.length < 4) { alert('密码至少4位'); return; }
   const device = getDeviceId();
-  fetch('http://192.168.1.162:8770/api/profile?device=' + encodeURIComponent(device) + '&password=' + encodeURIComponent(v))
+  fetch('https://demonstration-assumptions-chance-scripts.trycloudflare.com/api/profile?device=' + encodeURIComponent(device) + '&password=' + encodeURIComponent(v))
     .then(r => r.json())
     .then(d => {
       if (d && d.ok) {
