@@ -9617,6 +9617,7 @@ function startChat(mode) {
 window.addEventListener('load', () => {
   loadConversations();
   nvLoadSessions();
+  nvSyncLearnedFromCloud(); // v28: 启动时拉取全局灵感库合并到本地引擎
   setTimeout(() => {
     document.getElementById('splash').classList.add('hide');
   }, 2200);
@@ -10943,6 +10944,33 @@ function nvSaveLearned(rules) {
   try { localStorage.setItem('xy_novel_learned', JSON.stringify(rules || {})); } catch (e) {}
 }
 
+// v28: AI生成后灵感自动上传全局库 + 启动时拉取全局灵感合并到本地引擎
+const NV_API_BASE = 'https://demonstration-assumptions-chance-scripts.trycloudflare.com';
+function nvUploadLearned(learned) {
+  try {
+    if (!learned || (!learned.synonyms.length && !learned.patterns.length)) return;
+    var device = getDeviceId();
+    fetch(NV_API_BASE + '/api/novel/learn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device: device, learned: learned })
+    }).catch(function() { /* 离线静默 */ });
+  } catch(e) { /* 静默 */ }
+}
+function nvSyncLearnedFromCloud() {
+  try {
+    fetch(NV_API_BASE + '/api/novel/learned').then(function(r){ return r.json(); }).then(function(cloud){
+      if (!cloud || !Array.isArray(cloud.synonyms) || !Array.isArray(cloud.patterns)) return;
+      if (!cloud.synonyms.length && !cloud.patterns.length) return; // 全局库空，跳过
+      var local = nvLoadLearned();
+      var merged = NovelRule.mergeLearned(local, cloud);
+      if (merged.synonyms.length > local.synonyms.length || merged.patterns.length > local.patterns.length || merged.source_count > local.source_count) {
+        nvSaveLearned(merged);
+      }
+    }).catch(function() { /* 离线静默 */ });
+  } catch(e) { /* 静默 */ }
+}
+
 // ---- 生成会话存档（v20）：每章完成自动保存；暂停/退出后可从对话历史抽屉断点续写 ----
 const NV_SESSIONS_KEY = 'xy_novel_sessions';
 let nvSessions = [];
@@ -11506,7 +11534,7 @@ async function nvRun() {
         shufflePara: cfg.shufflePara, keepDialogue: cfg.keepDialogue,
         nameMap: nvParseNameMap(cfg.nameMap), customSyn: nvParseSyn(cfg.synCustom), learned
       }, (d, t, n) => nvProgress('改写', d, t, n || ''));
-      try { nvSaveLearned(NovelRule.mergeLearned(learned, NovelRule.learn(text))); } catch (e) { /* 学习失败不影响主流程 */ }
+      try { var _nl = NovelRule.learn(text); nvSaveLearned(NovelRule.mergeLearned(learned, _nl)); nvUploadLearned(_nl); } catch (e) { /* 学习失败不影响主流程 */ }
       nvState.result = { kind: 'rule', title: (nvState.sources[0] && nvState.sources[0].title || '改写稿'), synopsis: '', report: '', chapters: [{ title: '改写全文', body: out }] };
     } else {
       if (typeof NovelCreator === 'undefined') throw new Error('AI 引擎未加载');
@@ -11553,6 +11581,15 @@ async function nvRun() {
         synopsis: res.synopsis || '', report: res.report || '', engineResume: null
       });
       nvState.resumeState = null;
+      // v28: AI生成完成后提取灵感上传全局库 + 合并到本地引擎
+      try {
+        var _aiText = (res.chapters || []).map(function(c){ return c.body || ''; }).join('\n\n');
+        if (_aiText.length > 200 && typeof NovelRule !== 'undefined') {
+          var _aiLearned = NovelRule.learn(_aiText);
+          nvUploadLearned(_aiLearned);
+          nvSaveLearned(NovelRule.mergeLearned(nvLoadLearned(), _aiLearned));
+        }
+      } catch(e) { /* 灵感提取失败不影响主流程 */ }
     }
     nvProgressDone('生成完成');
     nvState.tab = 3; nvRender();
