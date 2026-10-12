@@ -8294,6 +8294,22 @@ async function aiInspireOutline(analysis, n, onProgress) {
   }
   if (onProgress) onProgress("通读原作，提炼核心创意…");
   var core = await inspireExtractCore(analysis);
+  // v29: AI提取失败时本地回退，用分析数据构建基础灵感，确保大纲生成始终有灵感指导
+  if (!core || !core.trim()) {
+    var _fb = [];
+    if (analysis.genre) _fb.push("【流派基调】" + analysis.genre);
+    if (analysis.tags && analysis.tags.length) _fb.push("【核心标签】" + analysis.tags.slice(0, 5).join("、"));
+    if (analysis.characters && analysis.characters.length) {
+      var _cs = analysis.characters.slice(0, 3).map(function (c) { return c.name + "(" + (c.role || "主角") + ")"; }).join("、");
+      _fb.push("【核心人物原型】" + _cs);
+    }
+    var _chs = (analysis.chapters || []).slice(0, 8);
+    if (_chs.length) {
+      var _plots = _chs.map(function (c) { return c.title || ""; }).filter(Boolean).join(" → ");
+      if (_plots) _fb.push("【叙事线索】" + _plots);
+    }
+    core = _fb.join("\n");
+  }
   if (onProgress) onProgress("基于核心灵感，原创 " + n + " 章大纲…");
   return await inspireCreateOutline(core, n, analysis, onProgress);
 }
