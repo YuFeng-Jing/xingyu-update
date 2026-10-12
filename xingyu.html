@@ -333,6 +333,52 @@ html, body {
 .input-bar .send-btn:active { transform: scale(0.88); box-shadow: 0 1px 4px rgba(74,144,217,0.25); }
 .input-bar .send-btn:disabled { opacity: 0.4; cursor: default; }
 .input-bar .send-btn svg { width: 16px; height: 16px; fill: #fff; }
+.input-bar .send-btn.abort { background: #e85a5a; box-shadow: 0 2px 8px rgba(232,90,90,0.32); }
+.input-bar .send-btn.abort svg { width: 14px; height: 14px; }
+
+/* v32: 模式切换按钮（替代内置服务chip） */
+.input-bar .mode-chip {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 26px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  transition: transform 0.22s var(--ease-spring), background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.input-bar .mode-chip:active { transform: scale(0.92); }
+.input-bar .mode-chip.plan { background: linear-gradient(135deg, var(--accent), #7b68ee); color: #fff; border: none; }
+.input-bar .mode-chip.guide { background: linear-gradient(135deg, #e8a830, #e87a30); color: #fff; border: none; }
+.input-bar .mode-chip svg { width: 12px; height: 12px; fill: currentColor; }
+
+/* v32: 悬浮回到底部按钮 */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s var(--ease-spring);
+  z-index: 8;
+}
+.scroll-bottom-btn.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) scale(1); }
+.scroll-bottom-btn:active { transform: translateX(-50%) scale(0.88); }
+.scroll-bottom-btn svg { width: 18px; height: 18px; fill: var(--text2); }
 
 /* ========== HISTORY DRAWER ========== */
 #drawer-overlay {
@@ -1565,16 +1611,19 @@ html, body {
 
     <div class="attachments-bar" id="home-attach"></div>
     <div class="input-bar">
+      <div class="scroll-bottom-btn" id="home-scroll-btn" onclick="scrollMsgToBottom('home-messages')">
+        <svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12z"/></svg>
+      </div>
       <div class="input-bar-inner">
         <div class="add-btn" onclick="toggleFileMenu(event)">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </div>
         <input type="text" id="home-input" placeholder="交给 星屿 去完成" onkeydown="if(event.key==='Enter') homeSend()"/>
-        <div class="home-model-chip" id="home-model-chip" onclick="openDetail('provider')">内置服务 / agnes-3.0-flash</div>
+        <div class="mode-chip" id="home-mode-chip" onclick="cycleChatMode('home')">对话</div>
         <div class="model-indicator" onclick="toggleRateMenu(event)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" opacity="0.3"/><path d="M12 6v12M6 12h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
-        <div class="send-btn" id="home-send" onclick="homeSend()" aria-label="发送">
+        <div class="send-btn" id="home-send" onclick="homeSendOrAbort()" aria-label="发送">
           <svg viewBox="0 0 24 24"><path d="M12 3l7.5 7.5h-4.5V21h-6V10.5H4.5L12 3z"/></svg>
         </div>
       </div>
@@ -1597,16 +1646,19 @@ html, body {
 
     <div class="attachments-bar" id="chat-attach"></div>
     <div class="input-bar">
+      <div class="scroll-bottom-btn" id="chat-scroll-btn" onclick="scrollMsgToBottom('chat-messages')">
+        <svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12z"/></svg>
+      </div>
       <div class="input-bar-inner">
         <div class="add-btn" onclick="toggleFileMenu(event)">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </div>
-        <input type="text" id="chat-input" placeholder="输入消息..." onkeydown="if(event.key==='Enter') chatSend()"/>
-        <div class="home-model-chip" id="chat-model-chip" onclick="openDetail('provider')">内置服务 / agnes-3.0-flash</div>
+        <input type="text" id="chat-input" placeholder="输入消息..." onkeydown="if(event.key==='Enter') chatSendOrAbort()"/>
+        <div class="mode-chip" id="chat-mode-chip" onclick="cycleChatMode('chat')">对话</div>
         <div class="model-indicator" onclick="toggleRateMenu(event)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" opacity="0.3"/><path d="M12 6v12M6 12h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
-        <div class="send-btn" id="chat-send" onclick="chatSend()" aria-label="发送">
+        <div class="send-btn" id="chat-send" onclick="chatSendOrAbort()" aria-label="发送">
           <svg viewBox="0 0 24 24"><path d="M12 3l7.5 7.5h-4.5V21h-6V10.5H4.5L12 3z"/></svg>
         </div>
       </div>
@@ -9679,6 +9731,11 @@ window.addEventListener('load', () => {
   loadConversations();
   nvLoadSessions();
   nvSyncLearnedFromCloud(); // v28: 启动时拉取全局灵感库合并到本地引擎
+  // v32: 滚动监听 — 滚动离开底部时显示悬浮回到底部按钮
+  ['home-messages', 'chat-messages'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('scroll', () => updateScrollBtn(id));
+  });
   setTimeout(() => {
     document.getElementById('splash').classList.add('hide');
   }, 2200);
@@ -9983,6 +10040,12 @@ const LLM_CONFIG = {
   model: 'agnes-3.0-flash'
 };
 
+// v32: 对话模式状态 + AbortController + 引导缓冲
+let chatModeState = { home: 'normal', chat: 'normal' }; // normal | plan | guide
+let _abortMap = {}; // containerId -> AbortController
+let _thinkBubbleMap = {}; // containerId -> thinking bubble element
+let _pendingGuide = { home: null, chat: null }; // 引导模式下待注入的补充输入
+
 // ========== 提供商配置 + 模型管理（设置-模型提供商详情页） ==========
 const PROVIDER_DEFAULT = {
   name: '内置服务',
@@ -10228,12 +10291,24 @@ async function callLLM(containerId) {
   // 归一化：删除消息可能导致 assistant 开头，截到首条 user 以兼容严格 API
   const hist = getHistory(containerId);
   const firstUser = hist.findIndex(m => m.role === 'user');
-  const messages = firstUser > 0 ? hist.slice(firstUser) : hist;
+  let messages = firstUser > 0 ? hist.slice(firstUser) : hist;
+  // v32: 模式注入 system prompt
+  const page = containerId === 'home-messages' ? 'home' : 'chat';
+  const mode = chatModeState[page] || 'normal';
+  if (mode === 'plan') {
+    messages = [{ role: 'system', content: '你是一个严谨的计划专家。用户提出需求后，你必须先输出一个结构化的执行计划（包含目标、步骤、所需资源、预期结果），然后再给出基于计划的详细回答。计划用【计划】标记，回答用【执行】标记。' }].concat(messages);
+  } else if (mode === 'guide') {
+    messages = [{ role: 'system', content: '你是一个灵活的创作助手。用户可能在你的回答过程中追加引导性输入来调整方向。如果用户消息中包含【引导补充】标记，说明这是对当前回答的实时修正，请在后续内容中立即采纳调整。' }].concat(messages);
+  }
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer ' + LLM_CONFIG.key
   };
   (LLM_CONFIG.extraHeaders || []).forEach(h => { headers[h.k] = h.v; });
+
+  // v32: AbortController
+  const ac = new AbortController();
+  _abortMap[containerId] = ac;
 
   let content = '';
   if (LLM_CONFIG.endpoint === 'responses') {
@@ -10244,7 +10319,8 @@ async function callLLM(containerId) {
     }));
     const res = await fetch(LLM_CONFIG.url, {
       method: 'POST', headers,
-      body: JSON.stringify({ model: LLM_CONFIG.model, input, stream: false })
+      body: JSON.stringify({ model: LLM_CONFIG.model, input, stream: false }),
+      signal: ac.signal
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -10257,7 +10333,8 @@ async function callLLM(containerId) {
     // Chat Completions API 格式
     const res = await fetch(LLM_CONFIG.url, {
       method: 'POST', headers,
-      body: JSON.stringify({ model: LLM_CONFIG.model, messages, stream: false })
+      body: JSON.stringify({ model: LLM_CONFIG.model, messages, stream: false }),
+      signal: ac.signal
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -10293,22 +10370,128 @@ function chatSend(targetId = 'chat-messages') {
   attachFiles = [];
   renderAttachments(page);
 
+  // v32: 切换发送按钮为中断按钮
+  setSendButtonState(page, true);
+
   // Show thinking indicator, then call real LLM
   const thinkBubble = showThinking(targetId);
+  _thinkBubbleMap[targetId] = thinkBubble;
   callLLM(targetId)
     .then(reply => {
       const aiRef = { role: 'assistant', content: reply };
       getHistory(targetId).push(aiRef);
       thinkBubble.remove();
+      delete _thinkBubbleMap[targetId];
       addMessage('ai', reply, targetId, aiRef);
     })
     .catch(err => {
       thinkBubble.remove();
+      delete _thinkBubbleMap[targetId];
+      if (err?.name === 'AbortError') return; // 用户主动中断，不报错
       const msg = err?.name === 'TypeError'
         ? '网络请求失败：无法连接到内置服务（可能是网络或跨域限制）。'
         : '请求失败：' + (err?.message || err);
       addMessage('ai', msg, targetId);
+    })
+    .finally(() => {
+      setSendButtonState(page, false);
+      delete _abortMap[targetId];
     });
+}
+
+// v32: 发送/中断按钮状态切换
+function setSendButtonState(page, isThinking) {
+  const btnId = page === 'home' ? 'home-send' : 'chat-send';
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  if (isThinking) {
+    btn.classList.add('abort');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2" fill="#fff"/></svg>';
+  } else {
+    btn.classList.remove('abort');
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3l7.5 7.5h-4.5V21h-6V10.5H4.5L12 3z"/></svg>';
+  }
+}
+
+// v32: 发送或中断（主页）— homeSend 已统一处理思考态
+function homeSendOrAbort() { homeSend(); }
+
+// v32: 发送或中断（聊天页）
+function chatSendOrAbort() {
+  const targetId = 'chat-messages';
+  if (_thinkBubbleMap[targetId]) {
+    // AI正在思考 → 引导模式则追加引导，否则中断
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (text && chatModeState.chat === 'guide') {
+      // 引导模式：中断当前请求，追加引导后重新发送
+      input.value = '';
+      abortChat(targetId, true);
+      // 把引导补充注入对话历史
+      const guideRef = { role: 'user', content: '【引导补充】' + text };
+      getHistory(targetId).push(guideRef);
+      addMessage('user', text, targetId, guideRef);
+      // 短暂延迟后重新发起请求
+      setTimeout(() => chatSend(targetId), 150);
+    } else {
+      abortChat(targetId);
+    }
+  } else {
+    chatSend();
+  }
+}
+
+// v32: 中断AI请求
+function abortChat(targetId, silent) {
+  const ac = _abortMap[targetId];
+  if (ac) {
+    try { ac.abort(); } catch (e) {}
+  }
+  const tb = _thinkBubbleMap[targetId];
+  if (tb) { try { tb.remove(); } catch (e) {} delete _thinkBubbleMap[targetId]; }
+  const page = targetId === 'home-messages' ? 'home' : 'chat';
+  setSendButtonState(page, false);
+  if (!silent) showToast('已中断');
+}
+
+// v32: 模式切换 normal → plan → guide → normal
+function cycleChatMode(page) {
+  const order = ['normal', 'plan', 'guide'];
+  const labels = { normal: '对话', plan: '计划', guide: '引导' };
+  const cur = chatModeState[page] || 'normal';
+  const idx = order.indexOf(cur);
+  const next = order[(idx + 1) % order.length];
+  chatModeState[page] = next;
+  const chipId = page + '-mode-chip';
+  const chip = document.getElementById(chipId);
+  if (chip) {
+    chip.textContent = labels[next];
+    chip.classList.remove('plan', 'guide');
+    if (next === 'plan') chip.classList.add('plan');
+    else if (next === 'guide') chip.classList.add('guide');
+  }
+  if (next !== 'normal') showToast('已切换至' + labels[next] + '模式');
+}
+
+// v32: 滚动到底部
+function scrollMsgToBottom(containerId) {
+  const msgs = document.getElementById(containerId);
+  if (msgs) {
+    msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
+    updateScrollBtn(containerId);
+  }
+}
+
+// v32: 滚动按钮显隐
+function updateScrollBtn(containerId) {
+  const msgs = document.getElementById(containerId);
+  if (!msgs) return;
+  const page = containerId === 'home-messages' ? 'home' : 'chat';
+  const btn = document.getElementById(page + '-scroll-btn');
+  if (!btn) return;
+  const atBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
+  if (atBottom) btn.classList.remove('show');
+  else btn.classList.add('show');
 }
 
 // ========== HOME INLINE CHAT ==========
@@ -10326,9 +10509,29 @@ function newHomeChat() {
   attachFiles = [];
   renderAttachments('home');
   chatMode = '对话';
+  // v32: 重置滚动按钮
+  const sb = document.getElementById('home-scroll-btn');
+  if (sb) sb.classList.remove('show');
 }
 
 function homeSend() {
+  const targetId = 'home-messages';
+  // v32: AI正在思考时，发送/Enter 触发中断或引导补充
+  if (_thinkBubbleMap[targetId]) {
+    const input = document.getElementById('home-input');
+    const text = input.value.trim();
+    if (text && chatModeState.home === 'guide') {
+      input.value = '';
+      abortChat(targetId, true);
+      const guideRef = { role: 'user', content: '【引导补充】' + text };
+      getHistory(targetId).push(guideRef);
+      addMessage('user', text, targetId, guideRef);
+      setTimeout(() => chatSend(targetId), 150);
+    } else {
+      abortChat(targetId);
+    }
+    return;
+  }
   const input = document.getElementById('home-input');
   const hasAttachments = attachFiles.length > 0;
   if (!input.value.trim() && !hasAttachments) return;
