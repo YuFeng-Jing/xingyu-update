@@ -1619,7 +1619,7 @@ html, body {
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </div>
         <input type="text" id="home-input" placeholder="交给 星屿 去完成" onkeydown="if(event.key==='Enter') homeSend()"/>
-        <div class="mode-chip" id="home-mode-chip" onclick="cycleChatMode('home')">对话</div>
+        <div class="mode-chip plan" id="home-mode-chip" onclick="cycleChatMode('home')">计划</div>
         <div class="model-indicator" onclick="toggleRateMenu(event)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" opacity="0.3"/><path d="M12 6v12M6 12h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
@@ -1654,7 +1654,7 @@ html, body {
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </div>
         <input type="text" id="chat-input" placeholder="输入消息..." onkeydown="if(event.key==='Enter') chatSendOrAbort()"/>
-        <div class="mode-chip" id="chat-mode-chip" onclick="cycleChatMode('chat')">对话</div>
+        <div class="mode-chip plan" id="chat-mode-chip" onclick="cycleChatMode('chat')">计划</div>
         <div class="model-indicator" onclick="toggleRateMenu(event)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" opacity="0.3"/><path d="M12 6v12M6 12h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
@@ -10040,8 +10040,8 @@ const LLM_CONFIG = {
   model: 'agnes-3.0-flash'
 };
 
-// v32: 对话模式状态 + AbortController + 引导缓冲
-let chatModeState = { home: 'normal', chat: 'normal' }; // normal | plan | guide
+// v33: 模式状态 plan(默认)→guide(AI回复后自动切换) ; AbortController + 引导缓冲
+let chatModeState = { home: 'plan', chat: 'plan' };
 let _abortMap = {}; // containerId -> AbortController
 let _thinkBubbleMap = {}; // containerId -> thinking bubble element
 let _pendingGuide = { home: null, chat: null }; // 引导模式下待注入的补充输入
@@ -10292,14 +10292,14 @@ async function callLLM(containerId) {
   const hist = getHistory(containerId);
   const firstUser = hist.findIndex(m => m.role === 'user');
   let messages = firstUser > 0 ? hist.slice(firstUser) : hist;
-  // v33: 模式注入 system prompt（引导为默认能力，所有模式均生效）
+  // v33: 模式注入 system prompt — plan: 先计划后执行; guide: 灵活引导
   const page = containerId === 'home-messages' ? 'home' : 'chat';
-  const mode = chatModeState[page] || 'normal';
+  const mode = chatModeState[page] || 'plan';
   const guideHint = '如果用户消息中包含【引导补充】标记，说明这是对当前回答的实时修正，请在后续内容中立即采纳调整方向。';
   if (mode === 'plan') {
     messages = [{ role: 'system', content: '你是一个严谨的计划专家。用户提出需求后，你必须先输出一个结构化的执行计划（包含目标、步骤、所需资源、预期结果），然后再给出基于计划的详细回答。计划用【计划】标记，回答用【执行】标记。' + guideHint }].concat(messages);
   } else {
-    messages = [{ role: 'system', content: '你是一个智能助手，能够根据用户需求提供专业回答。' + guideHint }].concat(messages);
+    messages = [{ role: 'system', content: '你是一个灵活的创作助手。用户可能在你的回答过程中追加引导性输入来调整方向。' + guideHint }].concat(messages);
   }
   const headers = {
     'Content-Type': 'application/json',
@@ -10384,6 +10384,12 @@ function chatSend(targetId = 'chat-messages') {
       thinkBubble.remove();
       delete _thinkBubbleMap[targetId];
       addMessage('ai', reply, targetId, aiRef);
+      // v33: 计划模式完成（AI已生成计划并执行）→ 自动转为引导模式
+      if (chatModeState[page] === 'plan') {
+        chatModeState[page] = 'guide';
+        const chip = document.getElementById(page + '-mode-chip');
+        if (chip) { chip.textContent = '引导'; chip.classList.remove('plan'); chip.classList.add('guide'); }
+      }
     })
     .catch(err => {
       thinkBubble.remove();
@@ -10452,11 +10458,11 @@ function abortChat(targetId, silent) {
   if (!silent) showToast('已中断');
 }
 
-// v33: 模式切换 normal → plan → normal（引导为默认能力，不再需要单独模式）
+// v33: 模式切换 plan → guide → plan
 function cycleChatMode(page) {
-  const order = ['normal', 'plan'];
-  const labels = { normal: '对话', plan: '计划' };
-  const cur = chatModeState[page] || 'normal';
+  const order = ['plan', 'guide'];
+  const labels = { plan: '计划', guide: '引导' };
+  const cur = chatModeState[page] || 'plan';
   const idx = order.indexOf(cur);
   const next = order[(idx + 1) % order.length];
   chatModeState[page] = next;
@@ -10466,8 +10472,9 @@ function cycleChatMode(page) {
     chip.textContent = labels[next];
     chip.classList.remove('plan', 'guide');
     if (next === 'plan') chip.classList.add('plan');
+    else if (next === 'guide') chip.classList.add('guide');
   }
-  if (next !== 'normal') showToast('已切换至' + labels[next] + '模式');
+  showToast('已切换至' + labels[next] + '模式');
 }
 
 // v32: 滚动到底部
@@ -10506,6 +10513,10 @@ function newHomeChat() {
   attachFiles = [];
   renderAttachments('home');
   chatMode = '对话';
+  // v33: 新对话重置为计划模式
+  chatModeState.home = 'plan';
+  const mc = document.getElementById('home-mode-chip');
+  if (mc) { mc.textContent = '计划'; mc.classList.remove('guide'); mc.classList.add('plan'); }
   // v32: 重置滚动按钮
   const sb = document.getElementById('home-scroll-btn');
   if (sb) sb.classList.remove('show');
