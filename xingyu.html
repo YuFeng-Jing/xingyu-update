@@ -8647,6 +8647,44 @@ async function aiInspireOutline(analysis, n, onProgress) {
   }
 
   /* ---------- AI 逐章写作（creator.AIChapterWriter.write 移植） ---------- */
+  // v30: 章节小纲（场景级细纲）——在大纲与正文之间增加一层：把每章 plot 拆为 2-4 个场景的地点/人物/动作/对话要点/情绪节奏
+  async function aiChapterBrief(outline, ch, analysis, prevTail, opts) {
+    if (!_llm) return "";
+    var chars = charBible(outline, 6);
+    var total = (outline.chapters || []).length;
+    var stage = storyStage(safeInt(ch.no), total);
+    var rhythm = rhythmGuide(safeInt(ch.no), total);
+    var styleRef = styleRefOf(analysis);
+    var sys =
+      "你是一位资深网文编辑。用户给你一章的大纲信息，请生成详细的场景级写作小纲（细纲），供作者按小纲写正文用。\n" +
+      "要求：\n" +
+      "1. 把本章拆分为 2-4 个场景，每个场景是一个连续的叙事单元（同一地点/同一时间段内发生的事）；\n" +
+      "2. 每个场景写清：地点、出场人物、核心动作（发生了什么）、对话要点（角色交锋的关键信息和潜台词）、情绪节奏（从X到Y）；\n" +
+      "3. 第一个场景必须承接上一章结尾画面，最后一个场景必须落在指定钩子上；\n" +
+      "4. 场景之间要有转折和递进，不能平行堆砌；每场字数预估标明；\n" +
+      "5. 直接输出小纲，不要解释。格式：\n" +
+      "【场景1】地点：…｜人物：…｜动作：…｜对话要点：…｜情绪：…→…｜预估字数：…\n" +
+      "【场景2】…\n" +
+      "【场景3】…";
+    var user =
+      "【全书】《" + (outline.title || "") + "》：" + (outline.premise || "") + "\n" +
+      "【世界观】" + (outline.world || "") + "\n" +
+      "【人物】" + chars + "\n" +
+      "【本章】第" + (ch.no != null ? ch.no : "?") + "章《" + (ch.title || "") + "》\n" +
+      stage + "\n" + rhythm + "\n" +
+      chapterSpecText(ch) + "\n" +
+      (prevTail ? "【上一章结尾】" + String(prevTail).slice(-300) + "\n" : "") +
+      (styleRef ? "【原作笔法参照】" + styleRef.slice(0, 200) + "\n" : "") +
+      "请生成本章场景级小纲：";
+    try {
+      var out = await chat(sys, user, 0.7, { maxTokens: opts.maxTokens, model: opts.model });
+      return (out || "").trim();
+    } catch (e) {
+      try { console.error("[aiChapterBrief] 失败：" + ((e && e.message) || e)); } catch (_e) {}
+      return "";
+    }
+  }
+
   async function aiWriteChapter(outline, ch, analysis, prevTail, originalBody, ctx) {
     ctx = ctx || {};
     var m = (analysis && analysis.methodology) || { dialogue_ratio: 0, cliff_rate: 0 };
@@ -8752,6 +8790,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
         storyStage(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
         rhythmGuide(safeInt(ch.no), (outline.chapters || []).length) + "\n" +
         chapterSpecText(ch) + "\n" +
+        (ctx.chapterBrief ? "【本章场景小纲（请严格按小纲场景顺序、情绪节奏与对话要点写作）】\n" + ctx.chapterBrief + "\n\n" : "") +
         (prevTail ? "【上一章结尾】" + String(prevTail).slice(-350) + "\n（注意衔接）\n" : "") +
         (prevHead ? "【防雷同·硬要求】上一章开头：「" + _normHead(prevHead, 24) + "…」——本章开头必须换一种切入方式，禁止同句式、同时间词、同动作开场；" +
           "上一章结尾画面：「" + _normHead(String(prevTail).slice(-40), 24) + "…」——本章结尾禁止停在相同画面或相同动作上。\n" : "") +
@@ -9432,6 +9471,12 @@ async function aiInspireOutline(analysis, n, onProgress) {
       var body = null;
       if (hasAI) {
         var needExpand = false, needHook = false, needAntiEcho = false, needLogic = "";
+        // v30: 先生成场景级小纲，再基于小纲写正文（仿写模式有原文参照，跳过）
+        var chapterBrief = "";
+        if (!isFollow) {
+          onProgress("写作", idx1, total, "生成小纲·" + dispTitle);
+          try { chapterBrief = await aiChapterBrief(outline, ch, analysis, prevTail, opts); } catch (e) { chapterBrief = ""; }
+        }
         for (var attempt = 0; attempt < 3; attempt++) {
           try {
             body = await aiWriteChapter(outline, ch, analysis, prevTail, orig, {
@@ -9440,7 +9485,7 @@ async function aiInspireOutline(analysis, n, onProgress) {
               context: context, stateBlock: stateBlock,
               expandHint: needExpand, hookHint: needHook ? hook : "",
               prevHead: prevHead, antiEcho: needAntiEcho,
-              logicHint: needLogic
+              logicHint: needLogic, chapterBrief: chapterBrief
             });
             if (cnChars(body) < hardFloor) { needExpand = true; body = null; continue; }
             if (!hookLanded(body, hook)) { needHook = true; body = null; continue; }
