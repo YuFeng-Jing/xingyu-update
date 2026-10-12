@@ -1528,7 +1528,7 @@ html, body {
   <div class="drawer-body" id="history-list">
     <!-- populated by JS -->
   </div>
-  <div class="drawer-float">
+  <div class="drawer-float" style="display:none">
     <div class="float-btn" onclick="navigate('chat')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent)">
         <circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>
@@ -9802,7 +9802,7 @@ function renderHistory(filter = '') {
     if (!items.length) return;
     html += `<div class="drawer-group-label">${g} <span class="count">${items.length}</span></div>`;
     items.forEach(it => {
-      html += `<div class="history-item" onclick="openHistoryItem(${it.id})">
+      html += `<div class="history-item" onclick="openHistoryItem(${it.id})" oncontextmenu="event.preventDefault();deleteHistoryItem(${it.id})">
         <div class="h-title">${it.title}</div>
         <div class="h-meta">${fmt(it.time)} · ${it.ui.length} 条消息</div>
       </div>`;
@@ -9814,15 +9814,54 @@ function renderHistory(filter = '') {
     html += `<div class="drawer-group-label" style="margin-top:14px">生成小说 <span class="count">${nvItems.length}</span></div>`;
     nvItems.forEach(s => {
       const st = s.done ? '已完成' : `已暂停 ${(s.chapters || []).length}/${s.totalChapters || '?'} 章`;
-      html += `<div class="history-item" onclick="nvOpenSession('${s.id}')">
+      html += `<div class="history-item" onclick="nvOpenSession('${s.id}')" oncontextmenu="event.preventDefault();deleteNvHistoryItem('${s.id}')">
         <div class="h-title">📖 ${String(s.title || '未命名').replace(/</g, '&lt;')}</div>
         <div class="h-meta">${fmt(s.updated || s.time)} · ${st}</div>
       </div>`;
     });
   }
   list.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text3)">暂无记录</div>';
+  // v34: 绑定长按删除（touch 长按 480ms → 触发 contextmenu → 删除确认）
+  list.querySelectorAll('.history-item').forEach(el => {
+    let tp = null, moved = false;
+    el.addEventListener('touchstart', () => {
+      moved = false;
+      tp = setTimeout(() => {
+        tp = null;
+        el.dispatchEvent(new Event('contextmenu', { cancelable: true }));
+      }, 480);
+    }, { passive: true });
+    el.addEventListener('touchmove', () => { moved = true; if (tp) { clearTimeout(tp); tp = null; } }, { passive: true });
+    el.addEventListener('touchend', (e) => {
+      if (tp) { clearTimeout(tp); tp = null; }       // 短按：不阻止，让 onclick 正常打开
+      else if (!moved) e.preventDefault();           // 长按已触发 contextmenu，阻止后续 click
+    });
+  });
 }
 function filterHistory(val) { renderHistory(val); }
+
+// v34: 删除对话历史
+function deleteHistoryItem(id) {
+  const idx = savedConversations.findIndex(i => i.id === id);
+  if (idx < 0) return;
+  const item = savedConversations[idx];
+  if (!confirm('删除对话「' + item.title + '」？')) return;
+  savedConversations.splice(idx, 1);
+  persistConversations();
+  renderHistory();
+  showToast('已删除');
+}
+// v34: 删除生成小说历史
+function deleteNvHistoryItem(sid) {
+  const idx = nvSessions.findIndex(s => s.id === sid);
+  if (idx < 0) return;
+  const s = nvSessions[idx];
+  if (!confirm('删除「' + (s.title || '未命名') + '」的生成记录？')) return;
+  nvSessions.splice(idx, 1);
+  nvPersistSessions();
+  renderHistory();
+  showToast('已删除');
+}
 function openHistoryItem(id) {
   const item = savedConversations.find(i => i.id === id);
   if (!item) return;
