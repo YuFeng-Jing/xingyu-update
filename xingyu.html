@@ -1613,6 +1613,21 @@ html, body {
     </div>
   </div>
 
+  <!-- ===== LOGIN ===== -->
+  <div class="page" id="login">
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 32px">
+      <div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#0a84ff,#5e5ce6);display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff;margin-bottom:18px;box-shadow:0 8px 24px rgba(10,132,255,.3)">星</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);margin-bottom:4px">星屿</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:32px">请输入管理员分配的账号和密码</div>
+      <div style="width:100%;max-width:320px">
+        <input id="login-name" type="text" placeholder="账号名" autocomplete="off" style="width:100%;padding:14px 16px;border:1px solid var(--border);border-radius:14px;font-size:16px;background:var(--card);color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box"/>
+        <input id="login-pwd" type="password" placeholder="密码" autocomplete="off" style="width:100%;padding:14px 16px;border:1px solid var(--border);border-radius:14px;font-size:16px;background:var(--card);color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box"/>
+        <div id="login-err" style="font-size:13px;color:#ff3b30;margin-bottom:12px;min-height:18px;text-align:center"></div>
+        <button id="login-btn" onclick="doLogin()" style="width:100%;padding:14px;border:0;border-radius:14px;background:#0a84ff;color:#fff;font-size:16px;font-weight:600;cursor:pointer">登录</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== SETTINGS ===== -->
   <div class="page" id="settings">
     <div class="topbar">
@@ -10413,6 +10428,19 @@ const detailContents = {
         <span class="badge-default">default</span>
       </div>
     </div>
+    <div class="sd-section-title">账号设置</div>
+    <div class="sd-card" style="padding:16px">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">昵称（主页显示）</div>
+      <div style="display:flex;gap:8px;margin-bottom:18px">
+        <input id="nick-input" type="text" placeholder="设置你的昵称" value="${localStorage.getItem('xingyu-nickname') || ''}" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--bg);color:var(--text);outline:none"/>
+        <button onclick="saveNickname()" style="border:0;background:#0a84ff;color:#fff;font-size:13px;padding:0 16px;border-radius:10px;cursor:pointer">保存</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">修改密码</div>
+      <div style="display:flex;gap:8px">
+        <input id="pwd-input" type="password" placeholder="输入新密码" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--bg);color:var(--text);outline:none"/>
+        <button onclick="savePassword()" style="border:0;background:#0a84ff;color:#fff;font-size:13px;padding:0 16px;border-radius:10px;cursor:pointer">保存</button>
+      </div>
+    </div>
     <div class="sd-section-title">模型与渠道</div>
     <div class="sd-card" style="padding:4px 16px">
       <div class="acct-row" style="cursor:pointer">
@@ -11529,16 +11557,17 @@ function toggleTheme() {
 // ========== 账号注册 ==========
 // 启动时同步提供商配置到聊天请求
 syncLLMConfig();
-// 每台新设备首次打开自动向本地服务器登记，分配账号：星屿测试1、星屿测试2 …
+// 账号登录：首次打开未绑定设备→跳登录界面；已绑定→自动登录
 function applyAccountName(name) {
+  const nick = localStorage.getItem('xingyu-nickname') || '';
+  const display = nick || name || '星屿测试';
   const h = document.getElementById('home-acct-name');
-  if (h) h.textContent = name;
+  if (h) h.textContent = display;
   const a = document.getElementById('acct-name');
-  if (a) a.textContent = name;
+  if (a) a.textContent = display;
 }
 
-function registerAccount() {
-  // APK 内优先用原生 ANDROID_ID（卸载重装不变）；浏览器环境回退 localStorage
+function getDeviceId() {
   let device = null;
   try {
     if (window.XingyuBridge && typeof window.XingyuBridge.getDeviceId === 'function') {
@@ -11552,6 +11581,11 @@ function registerAccount() {
       localStorage.setItem('xingyu-device', device);
     }
   }
+  return device;
+}
+
+function registerAccount() {
+  const device = getDeviceId();
   const cached = localStorage.getItem('xingyu-account');
   if (cached) applyAccountName(cached);
   fetch('http://127.0.0.1:8770/api/register?device=' + encodeURIComponent(device))
@@ -11559,11 +11593,83 @@ function registerAccount() {
     .then(d => {
       if (d && d.ok && d.name) {
         localStorage.setItem('xingyu-account', d.name);
+        localStorage.setItem('xingyu-nickname', d.nickname || '');
         applyAccountName(d.name);
+      } else if (d && d.needLogin) {
+        // 设备未绑定账号，跳转登录界面
+        navigate('login');
       }
     })
     .catch(() => { /* 服务器未启动时静默，沿用缓存名/默认名 */ });
 }
+
+function doLogin() {
+  const name = document.getElementById('login-name').value.trim();
+  const password = document.getElementById('login-pwd').value;
+  const err = document.getElementById('login-err');
+  const btn = document.getElementById('login-btn');
+  if (!name || !password) { err.textContent = '请输入账号名和密码'; return; }
+  err.textContent = '';
+  btn.textContent = '登录中…';
+  btn.disabled = true;
+  const device = getDeviceId();
+  fetch('http://127.0.0.1:8770/api/login?name=' + encodeURIComponent(name) + '&password=' + encodeURIComponent(password) + '&device=' + encodeURIComponent(device))
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      btn.textContent = '登录';
+      if (d && d.ok && d.name) {
+        localStorage.setItem('xingyu-account', d.name);
+        localStorage.setItem('xingyu-nickname', d.nickname || '');
+        applyAccountName(d.name);
+        document.getElementById('login-pwd').value = '';
+        navigate('home');
+      } else {
+        err.textContent = (d && d.error) || '登录失败';
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '登录';
+      err.textContent = '无法连接服务器';
+    });
+}
+
+function saveNickname() {
+  const v = document.getElementById('nick-input').value.trim();
+  const device = getDeviceId();
+  fetch('http://127.0.0.1:8770/api/profile?device=' + encodeURIComponent(device) + '&nickname=' + encodeURIComponent(v))
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.ok) {
+        localStorage.setItem('xingyu-nickname', d.nickname || v);
+        applyAccountName(localStorage.getItem('xingyu-account') || '');
+        alert('昵称已更新');
+      } else {
+        alert((d && d.error) || '更新失败');
+      }
+    })
+    .catch(() => alert('无法连接服务器'));
+}
+
+function savePassword() {
+  const v = document.getElementById('pwd-input').value.trim();
+  if (!v) { alert('请输入新密码'); return; }
+  if (v.length < 4) { alert('密码至少4位'); return; }
+  const device = getDeviceId();
+  fetch('http://127.0.0.1:8770/api/profile?device=' + encodeURIComponent(device) + '&password=' + encodeURIComponent(v))
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.ok) {
+        document.getElementById('pwd-input').value = '';
+        alert('密码已更新');
+      } else {
+        alert((d && d.error) || '更新失败');
+      }
+    })
+    .catch(() => alert('无法连接服务器'));
+}
+
 registerAccount();
 </script>
 </body>
