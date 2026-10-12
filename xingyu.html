@@ -10292,13 +10292,14 @@ async function callLLM(containerId) {
   const hist = getHistory(containerId);
   const firstUser = hist.findIndex(m => m.role === 'user');
   let messages = firstUser > 0 ? hist.slice(firstUser) : hist;
-  // v32: 模式注入 system prompt
+  // v33: 模式注入 system prompt（引导为默认能力，所有模式均生效）
   const page = containerId === 'home-messages' ? 'home' : 'chat';
   const mode = chatModeState[page] || 'normal';
+  const guideHint = '如果用户消息中包含【引导补充】标记，说明这是对当前回答的实时修正，请在后续内容中立即采纳调整方向。';
   if (mode === 'plan') {
-    messages = [{ role: 'system', content: '你是一个严谨的计划专家。用户提出需求后，你必须先输出一个结构化的执行计划（包含目标、步骤、所需资源、预期结果），然后再给出基于计划的详细回答。计划用【计划】标记，回答用【执行】标记。' }].concat(messages);
-  } else if (mode === 'guide') {
-    messages = [{ role: 'system', content: '你是一个灵活的创作助手。用户可能在你的回答过程中追加引导性输入来调整方向。如果用户消息中包含【引导补充】标记，说明这是对当前回答的实时修正，请在后续内容中立即采纳调整。' }].concat(messages);
+    messages = [{ role: 'system', content: '你是一个严谨的计划专家。用户提出需求后，你必须先输出一个结构化的执行计划（包含目标、步骤、所需资源、预期结果），然后再给出基于计划的详细回答。计划用【计划】标记，回答用【执行】标记。' + guideHint }].concat(messages);
+  } else {
+    messages = [{ role: 'system', content: '你是一个智能助手，能够根据用户需求提供专业回答。' + guideHint }].concat(messages);
   }
   const headers = {
     'Content-Type': 'application/json',
@@ -10420,18 +10421,15 @@ function homeSendOrAbort() { homeSend(); }
 function chatSendOrAbort() {
   const targetId = 'chat-messages';
   if (_thinkBubbleMap[targetId]) {
-    // AI正在思考 → 引导模式则追加引导，否则中断
+    // v33: AI思考时，有文字 → 引导补充（中断+追加+重发）；无文字 → 中断
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
-    if (text && chatModeState.chat === 'guide') {
-      // 引导模式：中断当前请求，追加引导后重新发送
+    if (text) {
       input.value = '';
       abortChat(targetId, true);
-      // 把引导补充注入对话历史
       const guideRef = { role: 'user', content: '【引导补充】' + text };
       getHistory(targetId).push(guideRef);
       addMessage('user', text, targetId, guideRef);
-      // 短暂延迟后重新发起请求
       setTimeout(() => chatSend(targetId), 150);
     } else {
       abortChat(targetId);
@@ -10454,10 +10452,10 @@ function abortChat(targetId, silent) {
   if (!silent) showToast('已中断');
 }
 
-// v32: 模式切换 normal → plan → guide → normal
+// v33: 模式切换 normal → plan → normal（引导为默认能力，不再需要单独模式）
 function cycleChatMode(page) {
-  const order = ['normal', 'plan', 'guide'];
-  const labels = { normal: '对话', plan: '计划', guide: '引导' };
+  const order = ['normal', 'plan'];
+  const labels = { normal: '对话', plan: '计划' };
   const cur = chatModeState[page] || 'normal';
   const idx = order.indexOf(cur);
   const next = order[(idx + 1) % order.length];
@@ -10468,7 +10466,6 @@ function cycleChatMode(page) {
     chip.textContent = labels[next];
     chip.classList.remove('plan', 'guide');
     if (next === 'plan') chip.classList.add('plan');
-    else if (next === 'guide') chip.classList.add('guide');
   }
   if (next !== 'normal') showToast('已切换至' + labels[next] + '模式');
 }
@@ -10516,11 +10513,11 @@ function newHomeChat() {
 
 function homeSend() {
   const targetId = 'home-messages';
-  // v32: AI正在思考时，发送/Enter 触发中断或引导补充
+  // v33: AI思考时，有文字输入 → 引导补充（中断+追加+重发）；无文字 → 中断
   if (_thinkBubbleMap[targetId]) {
     const input = document.getElementById('home-input');
     const text = input.value.trim();
-    if (text && chatModeState.home === 'guide') {
+    if (text) {
       input.value = '';
       abortChat(targetId, true);
       const guideRef = { role: 'user', content: '【引导补充】' + text };
