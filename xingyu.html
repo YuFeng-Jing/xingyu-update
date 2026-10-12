@@ -11425,8 +11425,8 @@ function nvOutputHTML() {
   let cond = '';
   if (ss === 'inspire') {
     cond = `<div class="nv-card" style="padding:12px 16px">
-      <div class="nv-label" style="margin-bottom:6px">灵感输入</div>
-      <textarea class="nv-textarea" id="nv-inspire" style="min-height:70px" placeholder="一句话灵感，如：废柴少年获得神秘系统，踏上逆天崛起之路">${(cfg.inspirePrompt || '').replace(/</g, '&lt;')}</textarea>
+      <div class="nv-label" style="margin-bottom:6px">灵感输入 <span style="font-size:11px;color:var(--text3)">（已导入文本时可留空，AI将自动识别提取）</span></div>
+      <textarea class="nv-textarea" id="nv-inspire" style="min-height:70px" placeholder="一句话灵感，如：废柴少年获得神秘系统，踏上逆天崛起之路（留空则从导入小说自动提取）">${(cfg.inspirePrompt || '').replace(/</g, '&lt;')}</textarea>
     </div>`;
   } else if (!aiMode) {
     cond = `<div class="nv-card" style="padding:12px 16px;font-size:13px;color:var(--text2);line-height:1.7">本地改写将处理「导入」页的全部来源文本（当前 ${nvState.sources.length} 篇）。</div>`;
@@ -11514,7 +11514,7 @@ async function nvRun() {
   if (inspireEl) { cfg.inspirePrompt = inspireEl.value.trim(); nvSaveCfg(cfg); }
   if (!aiMode && nvState.sources.length === 0) { showToast('本地改写需先在「导入」页添加文本'); nvTab(0); return; }
   if (aiMode && ss === 'follow' && !nvState.analysis) { showToast('AI 仿写需先识别原作'); nvTab(0); return; }
-  if (ss === 'inspire' && !(cfg.inspirePrompt || '').trim() && aiMode) { showToast('请先填写灵感输入'); return; }
+  if (ss === 'inspire' && !(cfg.inspirePrompt || '').trim() && aiMode && nvState.sources.length === 0) { showToast('请先导入小说文本或填写灵感输入'); nvTab(0); return; }
   nvState.running = true; nvState.pausing = false; nvSetRunning(true);
   const resumeState = nvState.resumeState || null;
   let sid = nvState.sessionId || null;
@@ -11541,7 +11541,13 @@ async function nvRun() {
       NovelCreator.setLLM(novelLLM);
       let analysis = nvState.analysis;
       if (ss === 'inspire') {
-        analysis = { title: '灵感原创', chapters: [], genre: '', characters: [], styleFacts: {}, ideas: cfg.inspirePrompt || '', raw: {} };
+        // v29: 已识别原作时保留分析结果，让引擎自动从分析中提炼灵感；未识别时引擎从 sourceText 自动提取
+        if (nvState.analysis && nvState.analysis.chapters && nvState.analysis.chapters.length) {
+          analysis = nvState.analysis;
+          if ((cfg.inspirePrompt || '').trim()) analysis.ideas = cfg.inspirePrompt;
+        } else {
+          analysis = { title: '灵感原创', chapters: [], genre: '', characters: [], styleFacts: {}, ideas: cfg.inspirePrompt || '', raw: {} };
+        }
       } else if (!analysis) {
         analysis = { title: nvState.sources[0] ? nvState.sources[0].title : '新作', chapters: [], genre: '', characters: [], styleFacts: {}, ideas: '', raw: {} };
       }
