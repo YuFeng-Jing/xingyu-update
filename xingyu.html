@@ -10667,9 +10667,30 @@ function selectRate(idx) {
 
 function pickFile(type) {
   closeFileMenu();
+  // v36: APK WebView 中 <input type=file> 不触发原生选择器，优先调原生桥接
+  try {
+    if (window.XingyuBridge && typeof window.XingyuBridge.pickFile === 'function') {
+      window.XingyuBridge.pickFile(type); // 原生端完成后回调 onBridgeFilePicked
+      return;
+    }
+  } catch (e) { /* 桥接不可用则回退 */ }
   const inputId = 'file-input-' + type;
   document.getElementById(inputId).click();
 }
+
+// v36: 原生桥接回调 — APK 选好文件后调用 window.onBridgeFilePicked({name, mime, base64})
+window.onBridgeFilePicked = function (info) {
+  if (!info || !info.name) return;
+  const page = currentPage === 'chat' ? 'chat' : 'home';
+  const isImage = (info.mime || '').indexOf('image/') === 0;
+  const dataUrl = isImage && info.base64 ? ('data:' + info.mime + ';base64,' + info.base64) : null;
+  let text = null;
+  if (!isImage && info.base64) {
+    try { text = decodeURIComponent(escape(atob(info.base64))); } catch (e) { text = null; }
+  }
+  attachFiles.push({ name: info.name, type: isImage ? 'image' : 'file', isImage: isImage, dataUrl: dataUrl, text: text });
+  renderAttachments(page);
+};
 
 function pickPath() {
   closeFileMenu();
@@ -10685,12 +10706,32 @@ function onFilePicked(input) {
   const files = input.files;
   if (!files || files.length === 0) return;
   const page = currentPage === 'chat' ? 'chat' : 'home';
+  // v36: 读取文件内容（图片 → dataURL；文本 → UTF-8 文本）供 AI 使用
+  let pending = files.length;
   for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    attachFiles.push({ name: f.name, type: f.type.startsWith('image/') ? 'image' : 'file', isImage: f.type.startsWith('image/') });
+    (function (f) {
+      const isImage = (f.type || '').indexOf('image/') === 0;
+      const item = { name: f.name, type: isImage ? 'image' : 'file', isImage: isImage, dataUrl: null, text: null };
+      attachFiles.push(item);
+      const done = () => { if (--pending === 0) { input.value = ''; renderAttachments(page); } };
+      // 大小上限：图片 4MB / 文本 256KB，超出则不读内容
+      const LIMIT = isImage ? 4 * 1024 * 1024 : 256 * 1024;
+      if (f.size > LIMIT) { done(); return; }
+      const rd = new FileReader();
+      rd.onload = () => {
+        try {
+          if (isImage) item.dataUrl = String(rd.result || '');
+          else item.text = String(rd.result || '');
+        } catch (e) { /* 忽略 */ }
+        done();
+      };
+      rd.onerror = done;
+      try {
+        if (isImage) rd.readAsDataURL(f);
+        else rd.readAsText(f, 'UTF-8');
+      } catch (e) { done(); }
+    })(files[i]);
   }
-  input.value = '';
-  renderAttachments(page);
 }
 
 function removeAttachment(idx, page) {
@@ -10713,7 +10754,19 @@ function renderAttachments(page) {
 
 function getAttachSummary() {
   if (!attachFiles.length) return '';
-  return `\n\n📎 附件: ${attachFiles.map(f => f.name).join(', ')}`;
+  // v36: 附件内容嵌入 user message：图片 → markdown 图片（多模态可识别）；文本 → 全文；其他 → 名称占位
+  let out = '\n\n📎 附件:';
+  attachFiles.forEach(f => {
+    if (f.isImage && f.dataUrl) {
+      out += '\n\n[图片 ' + f.name + ']\n![' + f.name + '](' + f.dataUrl + ')';
+    } else if (!f.isImage && f.text) {
+      const t = f.text.length > 8000 ? f.text.slice(0, 8000) + '\n…(内容过长已截断)' : f.text;
+      out += '\n\n[文件 ' + f.name + ' 内容]\n```\n' + t + '\n```';
+    } else {
+      out += ' ' + f.name;
+    }
+  });
+  return out;
 }
 
 // ========== SETTINGS DETAIL ==========
