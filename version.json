@@ -1,5 +1,5 @@
 {
-  "version": 35,
+  "version": 36,
   "url": "xingyu.html",
   "note": "星屿网页版；version 大于 APK 内置版本时 APK 会自动下载 url 缓存并在下次启动生效"
 }
