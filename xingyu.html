@@ -1621,6 +1621,13 @@ function loadConversations() {
     const raw = localStorage.getItem(CONV_LS_KEY);
     if (raw) savedConversations = JSON.parse(raw) || [];
   } catch (e) { savedConversations = []; }
+  if (!Array.isArray(savedConversations)) savedConversations = [];
+  // 关键：把 id 序列推进到已有最大值之后，否则新建对话会与历史 id 冲突
+  let maxId = 100;
+  savedConversations.forEach(c => {
+    if (c && typeof c.id === 'number' && c.id > maxId) maxId = c.id;
+  });
+  convSeq = maxId;
 }
 
 const rateLabels = ['极速', '快速', '标准', '深度', '极致'];
@@ -1711,6 +1718,22 @@ function saveCurrentConversation() {
   if (!els.length || !context.length) return; // 空对话或仅模式欢迎语，不保存
   const firstUser = context.find(m => m.role === 'user');
   const title = ((firstUser?.content || '新对话').replace(/\s+/g, ' ').trim() || '新对话').slice(0, 22);
+  // 去重：同一段对话（首条用户消息 + 消息条数相同）已在最近一条里，就不再重复保存
+  const ctxJson = JSON.stringify(context);
+  const dup = savedConversations.find(c =>
+    c.title === title && c.context && JSON.stringify(c.context) === ctxJson
+  );
+  if (dup) {
+    dup.time = Date.now();          // 更新时间，让它排到最前
+    dup.ui = els.map(e => ({
+      role: e.classList.contains('user') ? 'user' : 'ai',
+      text: e.querySelector('.typing-text')?.textContent || ''
+    }));
+    const idx = savedConversations.indexOf(dup);
+    if (idx > 0) { savedConversations.splice(idx, 1); savedConversations.unshift(dup); }
+    persistConversations();
+    return;
+  }
   savedConversations.unshift({
     id: ++convSeq,
     title,
@@ -1719,7 +1742,7 @@ function saveCurrentConversation() {
       role: e.classList.contains('user') ? 'user' : 'ai',
       text: e.querySelector('.typing-text')?.textContent || ''
     })),
-    context: JSON.parse(JSON.stringify(context))
+    context: JSON.parse(ctxJson)
   });
   if (savedConversations.length > 50) savedConversations.pop();
   persistConversations();
@@ -1793,29 +1816,39 @@ document.addEventListener('click', e => {
 // ========== CHAT ==========
 function addMessage(type, text, containerId = 'chat-messages', ref = null) {
   const msgs = document.getElementById(containerId);
+  if (!msgs) return null;
   const el = document.createElement('div');
   el.className = `msg ${type}`;
   el.innerHTML = `<span class="typing-text"></span>`;
-  el._fullText = text;   // 完整文本（打字机期间复制也取全文）
+  const str = String(text == null ? '' : text);
+  el._fullText = str;    // 完整文本（打字机期间复制也取全文）
   el._ref = ref;         // 对应 conversations 数组项引用（删除用）
   el._containerId = containerId;
   const textEl = el.querySelector('.typing-text');
   msgs.appendChild(el);
-  if (type === 'user' && ref) bindLongPress(el);
+  // 用户和 AI 消息都要能长按（复制/分享/保存/删除）
+  bindLongPress(el);
   msgs.scrollTop = msgs.scrollHeight;
 
-  // Typing effect
+  // 打字机效果：按文本长度动态分块，长文本不会慢到几分钟
+  const speed = getTypingSpeed();           // 每块间隔（ms）
+  const total = str.length;
+  // 目标：整条消息在 0.4s ~ 6s 内显示完
+  const targetMs = Math.min(6000, Math.max(400, total * 8));
+  const ticks = Math.max(1, Math.floor(targetMs / speed));
+  const chunk = Math.max(1, Math.ceil(total / ticks));
   let i = 0;
-  const speed = getTypingSpeed();
   const timer = setInterval(() => {
-    if (i < text.length) {
-      textEl.textContent += text[i];
-      i++;
+    if (i < total) {
+      i = Math.min(total, i + chunk);
+      textEl.textContent = str.slice(0, i);
       msgs.scrollTop = msgs.scrollHeight;
     } else {
       clearInterval(timer);
+      textEl.textContent = str;
     }
   }, speed);
+  return el;
 }
 
 // ========== MESSAGE LONG-PRESS ACTIONS ==========
@@ -1823,7 +1856,10 @@ let pressTimer = null;
 let msgSheetTarget = null; // 当前长按的气泡元素
 
 function bindLongPress(el) {
+  if (!el || el._longPressBound) return;   // 防重复绑定
+  el._longPressBound = true;
   const start = () => {
+    if (pressTimer) clearTimeout(pressTimer);
     pressTimer = setTimeout(() => { pressTimer = null; openMsgSheet(el); }, 480);
   };
   const cancel = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
@@ -1928,13 +1964,14 @@ function msgShare() {
 // 保存单条 AI/用户消息到手机（原生 MediaStore）
 function msgSaveToDevice() {
   if (!msgSheetTarget) return;
-  const t = msgSheetTarget._fullText || '';
+  const t = String(msgSheetTarget._fullText || '').trim();
   const role = msgSheetTarget.classList.contains('user') ? '我' : 'AI';
   closeMsgSheet();
+  if (!t) { showToast('这条消息是空的，无需保存'); return; }
   const ts = new Date();
   const pad = n => String(n).padStart(2, '0');
-  const fname = `星屿_${role}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}.md`;
-  const md = `# ${role} · 星屿\n\n${t}\n`;
+  const fname = `星屿_${role}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.md`;
+  const md = `# ${role} · 星屿\n\n_${ts.toLocaleString('zh-CN')}_\n\n${t}\n`;
   try {
     if (window.XingyuBridge && typeof window.XingyuBridge.exportText === 'function') {
       const r = window.XingyuBridge.exportText(fname, md);
@@ -2003,8 +2040,31 @@ function clearAllData() {
     localStorage.removeItem(CONV_LS_KEY);
     localStorage.removeItem('xingyu-account');
     localStorage.removeItem('xingyu-device');
+    // 清掉当前会话上下文与界面气泡，避免"清空后还能接着聊"的错觉
+    Object.keys(conversations).forEach(k => { conversations[k] = []; });
+    ['home-messages', 'chat-messages'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
+    renderHistory();
   } catch (e) {}
   showToast('已清空本地数据');
+}
+
+// 手动检查云端更新（设置页）
+function checkUpdateNow() {
+  try {
+    if (window.XingyuBridge && typeof window.XingyuBridge.checkUpdate === 'function') {
+      window.XingyuBridge.checkUpdate();
+      showToast('正在检查云端更新…');
+      return;
+    }
+    if (window.XingyuBridge && typeof window.XingyuBridge.pageVersion === 'function') {
+      showToast('当前页面版本 v' + window.XingyuBridge.pageVersion() + '（浏览器环境不支持热更）');
+      return;
+    }
+  } catch (e) { /* bridge 不可用 */ }
+  showToast('当前为浏览器环境，页面始终是最新');
 }
 
 function msgDelete() {
@@ -2069,10 +2129,13 @@ async function callLLM(containerId, attachments = []) {
   // 归一化：删除消息可能导致 assistant 开头，截到首条 user 以兼容严格 API
   const hist = getHistory(containerId);
   const firstUser = hist.findIndex(m => m.role === 'user');
-  let messages = firstUser > 0 ? hist.slice(firstUser) : hist.slice();
+  const start = firstUser > 0 ? firstUser : 0;
+
+  // 深拷贝，避免把历史里的 content 原地改成多模态数组（否则后续请求会重复带图）
+  let messages = hist.slice(start).map(m => ({ role: m.role, content: m.content }));
 
   // 有图片附件 → 升级为多模态消息（content 数组），仅保留最近 6 张控制 token
-  const images = attachments.filter(f => f.isImage && f.content && !f.large);
+  const images = attachments.filter(f => f.isImage && f.content && !f.large && /^data:image\//.test(String(f.content)));
   if (images.length && messages.length) {
     const lastUser = messages[messages.length - 1];
     if (lastUser.role === 'user' && typeof lastUser.content === 'string') {
@@ -2273,26 +2336,45 @@ function pickPath() {
   }
 }
 
+// 文本类文件扩展名/MIME 判定（这些用 readAsText 读明文，否则模型看不到内容）
+const TEXT_EXT = /\.(txt|md|markdown|json|js|mjs|cjs|ts|tsx|jsx|html?|css|scss|less|xml|yml|yaml|toml|ini|conf|cfg|log|csv|tsv|py|java|kt|kts|c|h|cpp|hpp|cs|go|rs|rb|php|sh|bash|zsh|bat|ps1|sql|lua|r|dart|swift|gradle|properties|env|gitignore|vue|svelte)$/i;
+
+function isTextFile(f) {
+  if (f.type && /^text\//.test(f.type)) return true;
+  if (f.type && /(json|javascript|xml|x-sh|yaml|x-yaml|x-shellscript|x-httpd-php)/i.test(f.type)) return true;
+  return TEXT_EXT.test(f.name || '');
+}
+
 function onFilePicked(input) {
   const files = input.files;
   if (!files || files.length === 0) return;
   const page = currentPage === 'chat' ? 'chat' : 'home';
   Array.from(files).forEach(f => {
-    const isImage = f.type.startsWith('image/');
-    // 真正读文件内容：≤1.5MB 读全量（图片 base64 传给多模态 / 文本直接传）
+    const isImage = /^image\//.test(f.type || '');
+    // ≤1.5MB 读全量：图片读 dataURL（多模态用），文本读 utf-8 明文（模型可直接理解）
     if (f.size <= 1536 * 1024) {
       const reader = new FileReader();
       reader.onload = () => {
+        const textMode = !isImage && isTextFile(f);
         attachFiles.push({
-          name: f.name, type: isImage ? 'image' : 'file', isImage,
-          content: reader.result, size: f.size
+          name: f.name,
+          type: isImage ? 'image' : (textMode ? 'text' : 'file'),
+          isImage,
+          isText: textMode,
+          // 图片存 dataURL；文本存明文；其它存 dataURL 仅用于“保存到手机”
+          content: reader.result,
+          size: f.size
         });
         renderAttachments(page);
       };
-      reader.onerror = () => attachFiles.push({ name: f.name, type: isImage ? 'image' : 'file', isImage });
-      reader.readAsDataURL(f);
+      reader.onerror = () => {
+        attachFiles.push({ name: f.name, type: isImage ? 'image' : 'file', isImage, isText: false, size: f.size, error: true });
+        renderAttachments(page);
+      };
+      if (!isImage && isTextFile(f)) reader.readAsText(f, 'utf-8');
+      else reader.readAsDataURL(f);
     } else {
-      attachFiles.push({ name: f.name, type: isImage ? 'image' : 'file', isImage, large: true, size: f.size });
+      attachFiles.push({ name: f.name, type: isImage ? 'image' : 'file', isImage, isText: false, large: true, size: f.size });
     }
   });
   input.value = '';
@@ -2306,43 +2388,63 @@ function removeAttachment(idx, page) {
 
 function renderAttachments(page) {
   const bar = document.getElementById(page + '-attach');
+  if (!bar) return;
   if (!attachFiles.length) { bar.innerHTML = ''; return; }
   const saveSvg = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-  bar.innerHTML = attachFiles.map((f, i) => `
+  const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  bar.innerHTML = attachFiles.map((f, i) => {
+    // 后缀标记：超限/读取失败/二进制/文本/图片
+    let tag = '';
+    if (f.large) tag = '（仅文件名）';
+    else if (f.error) tag = '（读取失败）';
+    else if (f.isImage) tag = '';
+    else if (f.isText) tag = '（文本已内联）';
+    else if (f.content) tag = '（二进制，仅文件名）';
+    const canSave = f.content != null && f.content !== '' && !f.large;
+    return `
     <div class="attach-item">
       <div class="attach-icon">${f.isImage ? imageSvg : fileSvg}</div>
-      <div class="attach-name">${f.name}${f.large ? '（仅文件名）' : ''}</div>
-      ${f.content && !f.large ? `<div class="attach-save" title="保存到手机" onclick="saveAttachmentToDevice(${i},'${page}')">${saveSvg}</div>` : ''}
+      <div class="attach-name">${esc(f.name)}${tag}</div>
+      ${canSave ? `<div class="attach-save" title="保存到手机" onclick="saveAttachmentToDevice(${i})">${saveSvg}</div>` : ''}
       <div class="attach-remove" onclick="removeAttachment(${i},'${page}')">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ========== 保存到手机（原生 MediaStore） ==========
-function saveAttachmentToDevice(idx, page) {
+function saveAttachmentToDevice(idx) {
   const f = attachFiles[idx];
-  if (!f || !f.content) {
+  if (!f || f.content == null || f.content === '') {
     showToast('该附件未读取内容，无法保存');
     return;
   }
-  const isImg = f.isImage || /^data:image\//.test(f.content);
-  // 提取 base64（剥离 data URL 前缀）
-  const b64 = f.content.replace(/^data:[^;]+;base64,/, '');
-  const mime = isImg ? (f.content.match(/^data:([^;]+);/) ? f.content.match(/^data:([^;]+);/)[1] : 'image/png') : 'text/plain';
+  // 统一成 { b64, mime }：图片/二进制是 dataURL，文本是明文 → 先转 base64
+  let b64, mime;
+  const s = String(f.content);
+  const m = s.match(/^data:([^;]+);base64,/);
+  if (m) {
+    b64 = s.slice(m[0].length);
+    mime = m[1];
+  } else {
+    // 文本明文（readAsText 结果）→ UTF-8 → base64
+    mime = 'text/plain';
+    b64 = btoa(unescape(encodeURIComponent(s)));
+  }
   try {
     if (window.XingyuBridge && typeof window.XingyuBridge.saveFile === 'function') {
       const r = window.XingyuBridge.saveFile(f.name, b64, mime);
       if (String(r).startsWith('ERR')) {
         showToast('保存失败：' + String(r).replace('ERR|', ''));
       } else {
-        // 原生侧异步完成会 toast，这里提示"已提交"
+        // 原生侧写盘在子线程，完成后再 toast 最终结果
         showToast('正在保存到下载目录…');
       }
     } else {
       // 浏览器环境：用下载链接兜底
       const a = document.createElement('a');
-      a.href = f.content;
+      a.href = m ? s : 'data:' + mime + ';base64,' + b64;
       a.download = f.name;
       a.click();
       showToast('已开始下载 ' + f.name);
@@ -2352,11 +2454,14 @@ function saveAttachmentToDevice(idx, page) {
   }
 }
 
-// 原生 saveFile/exportText 完成后回调（Toast 已弹，可在此做额外 UI）
+// 原生 saveFile/exportText 完成后回调
 window.xySaveDone = function(result) {
-  // result 形如 "ok|/storage/emulated/0/Download/xxx" 或 "ERR|..."
-  if (String(result).startsWith('ERR')) {
-    showToast('保存失败');
+  const s = String(result || '');
+  if (s.startsWith('ok|')) {
+    // 原生已 toast 成功提示，这里补一条含路径的轻提示
+    showToast('已保存：' + s.slice(3).split('/').pop());
+  } else if (s.startsWith('ERR|')) {
+    showToast('保存失败：' + s.slice(4));
   }
 };
 
@@ -2366,17 +2471,30 @@ function getAttachSummary() {
   attachFiles.forEach(f => {
     if (f.large) {
       lines.push(`- ${f.name}（${Math.round(f.size / 1024)}KB，超过内联上限，仅记录文件名）`);
-    } else if (f.isImage && f.content) {
-      lines.push(`- ${f.name}（图片，已内联）`);
-    } else if (f.content && f.type !== 'path') {
-      // 文本文件：内联内容（截断到 6000 字符防止撑爆请求）
-      let body = String(f.content).replace(/^data:[^;]+;base64,/, '');
-      if (/;base64,/.test(String(f.content))) { /* base64 文本文件不解码，仅提示 */ body = '(二进制内容)'; }
-      if (body.length > 6000) body = body.slice(0, 6000) + '…(已截断)';
-      lines.push(`- ${f.name}:\n${body}`);
-    } else {
-      lines.push(`- ${f.name}`);
+      return;
     }
+    if (f.error) {
+      lines.push(`- ${f.name}（读取失败，仅记录文件名）`);
+      return;
+    }
+    if (f.isImage) {
+      lines.push(`- ${f.name}（图片，已内联）`);
+      return;
+    }
+    // 文本文件：content 是 readAsText 的明文，直接内联给模型（截断防撑爆请求）
+    if (f.isText && typeof f.content === 'string' && f.content.length) {
+      let body = f.content;
+      const LIMIT = 6000;
+      if (body.length > LIMIT) body = body.slice(0, LIMIT) + `\n…(已截断，原 ${f.content.length} 字符)`;
+      lines.push(`- ${f.name}:\n\`\`\`\n${body}\n\`\`\``);
+      return;
+    }
+    // 二进制文件（docx/pdf/zip 等）：只记文件名，不内联乱码
+    if (f.content && /^data:[^;]+;base64,/.test(String(f.content))) {
+      lines.push(`- ${f.name}（二进制文件，${Math.round((f.size || 0) / 1024)}KB，仅记录文件名）`);
+      return;
+    }
+    lines.push(`- ${f.name}`);
   });
   return lines.join('\n');
 }
@@ -2424,6 +2542,12 @@ const detailContents = {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </div>
         <div class="ar-info"><div class="ar-title">导出全部对话</div><div class="ar-sub">保存为 Markdown 到手机下载目录</div></div>
+      </div>
+      <div class="acct-row" style="cursor:pointer" onclick="checkUpdateNow()">
+        <div class="ar-icon" style="background:#e3f2fd">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1565c0" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </div>
+        <div class="ar-info"><div class="ar-title">检查更新</div><div class="ar-sub" id="cur-ver-sub">从云端拉取最新页面</div></div>
       </div>
       <div class="acct-row" style="cursor:pointer" onclick="clearAllData()">
         <div class="ar-icon" style="background:#ffebee">
@@ -2623,7 +2747,20 @@ function openDetail(type) {
   const titles = { account:'星屿账户', provider:'模型提供商', newProviderOpenAI:'新建提供商', newProviderAnthropic:'新建提供商', thinking:'思考设置', systemPrompt:'系统提示词', memory:'记忆', mcp:'' };
   title.textContent = titles[type] !== undefined ? titles[type] : type;
   body.innerHTML = detailContents[type] ? detailContents[type]() : '';
-  if (type === 'account') applyAccountName(localStorage.getItem('xingyu-account') || '星屿测试');
+  if (type === 'account') {
+    applyAccountName(localStorage.getItem('xingyu-account') || '星屿测试');
+    // 显示当前页面版本（APK 内可读）
+    const sub = document.getElementById('cur-ver-sub');
+    if (sub) {
+      let v = null;
+      try {
+        if (window.XingyuBridge && typeof window.XingyuBridge.pageVersion === 'function') {
+          v = window.XingyuBridge.pageVersion();
+        }
+      } catch (e) { }
+      sub.textContent = (v != null) ? ('当前 v' + v + '，点击检查云端更新') : '从云端拉取最新页面';
+    }
+  }
 
   // Show save bar only for editable items
   saveBar.style.display = ['thinking'].includes(type) ? 'flex' : 'none';
@@ -2774,21 +2911,33 @@ function registerAccount() {
   if (!device) {
     device = localStorage.getItem('xingyu-device');
     if (!device) {
-      device = (crypto.randomUUID ? crypto.randomUUID() : 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
-      localStorage.setItem('xingyu-device', device);
+      try {
+        device = (crypto.randomUUID ? crypto.randomUUID() : 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
+      } catch (e) {
+        device = 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+      }
+      try { localStorage.setItem('xingyu-device', device); } catch (e) {}
     }
   }
   const cached = localStorage.getItem('xingyu-account');
   if (cached) applyAccountName(cached);
-  fetch('http://127.0.0.1:8770/api/register?device=' + encodeURIComponent(device))
-    .then(r => r.json())
-    .then(d => {
-      if (d && d.ok && d.name) {
-        localStorage.setItem('xingyu-account', d.name);
-        applyAccountName(d.name);
-      }
-    })
-    .catch(() => { /* 服务器未启动时静默，沿用缓存名/默认名 */ });
+
+  // 本地服务通常未启动：加 2.5s 超时，避免请求悬挂拖慢首屏
+  try {
+    const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, 2500);
+    fetch('http://127.0.0.1:8770/api/register?device=' + encodeURIComponent(device),
+          ctrl ? { signal: ctrl.signal } : undefined)
+      .then(r => r.json())
+      .then(d => {
+        clearTimeout(timer);
+        if (d && d.ok && d.name) {
+          try { localStorage.setItem('xingyu-account', d.name); } catch (e) {}
+          applyAccountName(d.name);
+        }
+      })
+      .catch(() => { clearTimeout(timer); /* 服务器未启动时静默 */ });
+  } catch (e) { /* 环境不支持 fetch */ }
 }
 registerAccount();
 </script>
