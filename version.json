@@ -1,5 +1,5 @@
 {
-  "version": 36,
+  "version": 37,
   "url": "xingyu.html",
-  "note": "星屿网页版；version 大于 APK 内置版本时 APK 会自动下载 url 缓存并在下次启动生效"
+  "note": "v37：真实文件上传（图片/文件内容内联，图片走多模态 image_url）、返回键逐层关闭浮层、夜间模式同步原生状态栏"
 }
