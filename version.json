@@ -1,1 +1,1 @@
-{"version":38,"url":"xingyu.html","note":"v38: file save/export to device (MediaStore Downloads), file content inline to LLM, single message export, export all conversations, clear local data"}
+{"version":39,"url":"xingyu.html","note":"v39: fix text-attachment content not reaching model (readAsText), AI-message long-press, typing speed for long replies, duplicate conversation save, convSeq id collision, clearAllData memory cleanup, manual update check; native: IS_PENDING MediaStore write, multi-select file picker, back-key debounce, no-cache hot update, offline silent"}
