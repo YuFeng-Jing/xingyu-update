@@ -1,1 +1,1 @@
-{"version":38,"url":"xingyu.html","note":"v38: file upload to device (MediaStore), export conversation, save single message, clear local data, real file-content inline for LLM"}
+{"version":38,"url":"xingyu.html","note":"v38: file save/export to device (MediaStore Downloads), file content inline to LLM, single message export, export all conversations, clear local data"}
