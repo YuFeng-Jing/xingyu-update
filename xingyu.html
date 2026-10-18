@@ -670,6 +670,23 @@ html, body {
 }
 .attach-item .attach-remove:active { background: rgba(0,0,0,0.1); }
 .attach-item .attach-remove svg { width: 12px; height: 12px; stroke: var(--text2); }
+.attach-item .attach-save {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; background: rgba(0,0,0,0.05); flex-shrink: 0;
+}
+.attach-item .attach-save:active { background: rgba(0,0,0,0.1); }
+.attach-item .attach-save svg { width: 12px; height: 12px; stroke: var(--text2); }
+/* 导出按钮（设置页底部） */
+.export-btn-block {
+  width: 100%; padding: 14px; border: none;
+  background: var(--section-label-bg, #f0f0f5);
+  color: var(--text); font-size: 15px; font-weight: 600;
+  border-radius: 14px; cursor: pointer; margin-top: 8px;
+  transition: transform 0.15s, opacity 0.2s;
+}
+.export-btn-block:active { transform: scale(0.98); opacity: 0.85; }
+[data-theme="dark"] .export-btn-block { background: #2a2a32; }
 
 /* ========== SETTINGS DETAIL OVERLAY ========== */
 #settings-detail {
@@ -1579,6 +1596,10 @@ html, body {
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
     分享
   </div>
+  <div class="file-menu-item" onclick="msgSaveToDevice()">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    保存到手机
+  </div>
   <div class="file-menu-item msg-menu-danger" onclick="msgDelete()">
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
     删除
@@ -1904,6 +1925,88 @@ function msgShare() {
   }
 }
 
+// 保存单条 AI/用户消息到手机（原生 MediaStore）
+function msgSaveToDevice() {
+  if (!msgSheetTarget) return;
+  const t = msgSheetTarget._fullText || '';
+  const role = msgSheetTarget.classList.contains('user') ? '我' : 'AI';
+  closeMsgSheet();
+  const ts = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fname = `星屿_${role}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}.md`;
+  const md = `# ${role} · 星屿\n\n${t}\n`;
+  try {
+    if (window.XingyuBridge && typeof window.XingyuBridge.exportText === 'function') {
+      const r = window.XingyuBridge.exportText(fname, md);
+      if (String(r).startsWith('ERR')) showToast('保存失败：' + String(r).replace('ERR|', ''));
+      else showToast('正在保存到下载目录…');
+    } else {
+      // 浏览器兜底
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      a.click();
+      showToast('已开始下载 ' + fname);
+    }
+  } catch (e) {
+    showToast('保存失败：' + e.message);
+  }
+}
+
+// ========== 数据管理（设置页） ==========
+// 导出全部对话历史为 Markdown，原生保存到手机下载目录
+function exportAllConversations() {
+  const ts = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+  const fname = `星屿_对话导出_${stamp}.md`;
+
+  let md = `# 星屿 · 对话导出\n\n_导出时间：${ts.toLocaleString('zh-CN')}_\n`;
+  const items = savedConversations.slice().reverse(); // 按时间先后
+  if (!items.length) {
+    md += `\n_（无历史对话记录）_\n`;
+  }
+  items.forEach((c, i) => {
+    md += `\n\n---\n\n## 对话 ${i + 1}：${c.title || '未命名'}\n\n_时间：${new Date(c.time).toLocaleString('zh-CN')}_\n\n`;
+    (c.ui || []).forEach(m => {
+      const who = m.role === 'user' ? '**我**' : '**AI**';
+      md += `${who}：${(m.text || '').trim()}\n\n`;
+    });
+  });
+
+  try {
+    if (window.XingyuBridge && typeof window.XingyuBridge.exportText === 'function') {
+      const r = window.XingyuBridge.exportText(fname, md);
+      if (String(r).startsWith('ERR')) showToast('导出失败：' + String(r).replace('ERR|', ''));
+      else showToast('正在导出 ' + items.length + ' 段对话…');
+    } else {
+      // 浏览器兜底：直接下载 .md
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      a.click();
+      showToast('已开始下载 ' + fname);
+    }
+  } catch (e) {
+    showToast('导出失败：' + e.message);
+  }
+}
+
+// 清空本地数据（对话历史 + 账号缓存 + 设备缓存），原生与浏览器通用
+function clearAllData() {
+  const ok = confirm('确定清空全部对话历史与账号缓存？此操作不可恢复。');
+  if (!ok) return;
+  try {
+    savedConversations = [];
+    localStorage.removeItem(CONV_LS_KEY);
+    localStorage.removeItem('xingyu-account');
+    localStorage.removeItem('xingyu-device');
+  } catch (e) {}
+  showToast('已清空本地数据');
+}
+
 function msgDelete() {
   if (!msgSheetTarget) return;
   const el = msgSheetTarget;
@@ -2204,15 +2307,58 @@ function removeAttachment(idx, page) {
 function renderAttachments(page) {
   const bar = document.getElementById(page + '-attach');
   if (!attachFiles.length) { bar.innerHTML = ''; return; }
+  const saveSvg = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   bar.innerHTML = attachFiles.map((f, i) => `
     <div class="attach-item">
       <div class="attach-icon">${f.isImage ? imageSvg : fileSvg}</div>
-      <div class="attach-name">${f.name}</div>
+      <div class="attach-name">${f.name}${f.large ? '（仅文件名）' : ''}</div>
+      ${f.content && !f.large ? `<div class="attach-save" title="保存到手机" onclick="saveAttachmentToDevice(${i},'${page}')">${saveSvg}</div>` : ''}
       <div class="attach-remove" onclick="removeAttachment(${i},'${page}')">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </div>
     </div>`).join('');
 }
+
+// ========== 保存到手机（原生 MediaStore） ==========
+function saveAttachmentToDevice(idx, page) {
+  const f = attachFiles[idx];
+  if (!f || !f.content) {
+    showToast('该附件未读取内容，无法保存');
+    return;
+  }
+  const isImg = f.isImage || /^data:image\//.test(f.content);
+  // 提取 base64（剥离 data URL 前缀）
+  const b64 = f.content.replace(/^data:[^;]+;base64,/, '');
+  const mime = isImg ? (f.content.match(/^data:([^;]+);/) ? f.content.match(/^data:([^;]+);/)[1] : 'image/png') : 'text/plain';
+  try {
+    if (window.XingyuBridge && typeof window.XingyuBridge.saveFile === 'function') {
+      const r = window.XingyuBridge.saveFile(f.name, b64, mime);
+      if (String(r).startsWith('ERR')) {
+        showToast('保存失败：' + String(r).replace('ERR|', ''));
+      } else {
+        // 原生侧异步完成会 toast，这里提示"已提交"
+        showToast('正在保存到下载目录…');
+      }
+    } else {
+      // 浏览器环境：用下载链接兜底
+      const a = document.createElement('a');
+      a.href = f.content;
+      a.download = f.name;
+      a.click();
+      showToast('已开始下载 ' + f.name);
+    }
+  } catch (e) {
+    showToast('保存失败：' + e.message);
+  }
+}
+
+// 原生 saveFile/exportText 完成后回调（Toast 已弹，可在此做额外 UI）
+window.xySaveDone = function(result) {
+  // result 形如 "ok|/storage/emulated/0/Download/xxx" 或 "ERR|..."
+  if (String(result).startsWith('ERR')) {
+    showToast('保存失败');
+  }
+};
 
 function getAttachSummary() {
   if (!attachFiles.length) return '';
@@ -2269,6 +2415,21 @@ const detailContents = {
       <div class="acct-row" style="cursor:pointer">
         <div class="ar-icon" style="background:#ede7f6">${icRefresh}</div>
         <div class="ar-info"><div class="ar-title">刷新模型列表</div><div class="ar-sub">从内置服务同步最新可用模型</div></div>
+      </div>
+    </div>
+    <div class="sd-section-title">数据管理</div>
+    <div class="sd-card" style="padding:4px 16px">
+      <div class="acct-row" style="cursor:pointer" onclick="exportAllConversations()">
+        <div class="ar-icon" style="background:#e8f5e9">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <div class="ar-info"><div class="ar-title">导出全部对话</div><div class="ar-sub">保存为 Markdown 到手机下载目录</div></div>
+      </div>
+      <div class="acct-row" style="cursor:pointer" onclick="clearAllData()">
+        <div class="ar-icon" style="background:#ffebee">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c62828" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+        </div>
+        <div class="ar-info"><div class="ar-title">清空本地数据</div><div class="ar-sub">删除全部对话历史与账号缓存</div></div>
       </div>
     </div>`,
 

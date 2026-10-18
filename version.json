@@ -1,5 +1,1 @@
-{
-  "version": 37,
-  "url": "xingyu.html",
-  "note": "v37：真实文件上传（图片/文件内容内联，图片走多模态 image_url）、返回键逐层关闭浮层、夜间模式同步原生状态栏"
-}
+{"version":38,"url":"xingyu.html","note":"v38: file upload to device (MediaStore), export conversation, save single message, clear local data, real file-content inline for LLM"}
